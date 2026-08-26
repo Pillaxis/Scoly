@@ -63,10 +63,7 @@ export default function DashboardPage() {
       {/* NIVEAU 1 : 4 KPI Cards */}
       <MetricCards />
 
-      {/* NIVEAU 2 : Centre d'Actions — À Traiter Aujourd'hui */}
-      <UrgentActionCenter />
-
-      {/* NIVEAU 3 : Graphique Principal + Donut (Camembert) Statut Élèves */}
+      {/* NIVEAU 2 : Graphique Principal + Donut (Camembert) Statut Élèves */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <RevenueEvolutionChart />
@@ -75,6 +72,9 @@ export default function DashboardPage() {
           <StudentStatusDonut />
         </div>
       </div>
+
+      {/* NIVEAU 3 : Centre d'Actions — À Traiter Aujourd'hui */}
+      <UrgentActionCenter />
 
       {/* NIVEAU 4 : Répartition des Encaissements */}
       <PaymentMethodsBreakdown />

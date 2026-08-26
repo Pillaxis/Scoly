@@ -1,17 +1,20 @@
 "use client";
 
 import React, { useState, createContext, useContext } from "react";
+import dynamic from "next/dynamic";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Header } from "@/components/shell/Header";
 import { BottomNav } from "@/components/shell/BottomNav";
-import { PaymentModal } from "@/components/payments/PaymentModal";
-import { ReceiptModal } from "@/components/payments/ReceiptModal";
-import { StudentModal } from "@/components/students/StudentModal";
-import { ReminderModal } from "@/components/debts/ReminderModal";
-import { ImportModal } from "@/components/import/ImportModal";
 import { ScolyProvider, useScoly } from "@/lib/store";
 import { Payment, Student } from "@/types/scoly";
 import { ImportSourceType } from "@/types/import";
+
+// Lazy-load modals — only loaded when user opens them
+const PaymentModal = dynamic(() => import("@/components/payments/PaymentModal").then(m => ({ default: m.PaymentModal })), { ssr: false });
+const ReceiptModal = dynamic(() => import("@/components/payments/ReceiptModal").then(m => ({ default: m.ReceiptModal })), { ssr: false });
+const StudentModal = dynamic(() => import("@/components/students/StudentModal").then(m => ({ default: m.StudentModal })), { ssr: false });
+const ReminderModal = dynamic(() => import("@/components/debts/ReminderModal").then(m => ({ default: m.ReminderModal })), { ssr: false });
+const ImportModal = dynamic(() => import("@/components/import/ImportModal").then(m => ({ default: m.ImportModal })), { ssr: false });
 
 interface GlobalModalContextType {
   openPaymentModal: (studentId?: string) => void;

@@ -10,6 +10,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "SCOLY — La gestion scolaire, simplement",
   description: "Plateforme SaaS financière et administrative pour écoles privées en Afrique.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

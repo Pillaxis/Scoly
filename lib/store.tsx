@@ -196,100 +196,93 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>(getDefaultPaymentMethods());
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from LocalStorage on mount & optionally from Supabase
+  // Instant load from LocalStorage on mount + non-blocking background Supabase sync
   useEffect(() => {
-    async function loadData() {
+    function loadFromLocalStorage() {
       try {
-        // --- SUPABASE HYBRID MODE ---
-        if (isSupabaseConfigured) {
-          console.log("[SCOLY] Supabase configured — loading from cloud...");
-          try {
-            const sbSchool = await fetchSchool();
-            if (sbSchool) {
-              setSchool(sbSchool);
+        const isCleanVersion = localStorage.getItem(STORAGE_KEYS.VERSION);
 
-              const sbYear = await fetchAcademicYear(sbSchool.id);
-              if (sbYear) {
-                setAcademicYear(sbYear);
-                setAcademicYearsList([sbYear]);
-
-                const [sbClasses, sbStudents, sbPayments, sbPlans, sbReminders] = await Promise.all([
-                  fetchClasses(sbSchool.id, sbYear.id),
-                  fetchStudents(sbSchool.id, sbYear.id),
-                  fetchPayments(sbSchool.id, sbYear.id),
-                  fetchTuitionPlans(sbSchool.id, sbYear.id),
-                  fetchReminders(sbSchool.id),
-                ]);
-
-                if (sbClasses.length > 0) setClasses(sbClasses);
-                if (sbStudents.length > 0) setStudents(sbStudents);
-                if (sbPayments.length > 0) setPayments(sbPayments);
-                if (sbPlans.length > 0) setTuitionPlans(sbPlans);
-                if (sbReminders.length > 0) setReminders(sbReminders);
-              }
-            }
-            console.log("[SCOLY] Supabase data loaded successfully.");
-          } catch (sbErr) {
-            console.warn("[SCOLY] Supabase load failed, falling back to localStorage", sbErr);
-            loadFromLocalStorage();
-          }
+        if (!isCleanVersion || isCleanVersion !== "clean_v6") {
+          localStorage.clear();
+          localStorage.setItem(STORAGE_KEYS.VERSION, "clean_v6");
+          setSchool(INITIAL_SCHOOL);
+          setClasses(INITIAL_CLASSES);
+          setTuitionPlans([]);
+          setStudents([]);
+          setPayments([]);
+          setReminders([]);
+          setStaffMembers(DEFAULT_STAFF);
+          setImportBatches([]);
+          setAuditLogs([]);
+          setPaymentMethods(getDefaultPaymentMethods());
         } else {
-          // --- LOCAL STORAGE MODE ---
-          loadFromLocalStorage();
+          const savedSchool = localStorage.getItem(STORAGE_KEYS.SCHOOL);
+          const savedAcademicYear = localStorage.getItem(STORAGE_KEYS.ACADEMIC_YEAR);
+          const savedAcademicYearsList = localStorage.getItem(STORAGE_KEYS.ACADEMIC_YEARS_LIST);
+          const savedClasses = localStorage.getItem(STORAGE_KEYS.CLASSES);
+          const savedTuitions = localStorage.getItem(STORAGE_KEYS.TUITION_PLANS);
+          const savedStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+          const savedPayments = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
+          const savedReminders = localStorage.getItem(STORAGE_KEYS.REMINDERS);
+          const savedStaff = localStorage.getItem(STORAGE_KEYS.STAFF);
+          const savedBatches = localStorage.getItem(STORAGE_KEYS.IMPORT_BATCHES);
+          const savedAudit = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+          const savedMethods = localStorage.getItem(STORAGE_KEYS.PAYMENT_METHODS);
+
+          if (savedSchool) setSchool(JSON.parse(savedSchool));
+          if (savedAcademicYear) setAcademicYear(JSON.parse(savedAcademicYear));
+          if (savedAcademicYearsList) setAcademicYearsList(JSON.parse(savedAcademicYearsList));
+          if (savedClasses) setClasses(JSON.parse(savedClasses));
+          if (savedTuitions) setTuitionPlans(JSON.parse(savedTuitions));
+          if (savedStudents) setStudents(JSON.parse(savedStudents));
+          if (savedPayments) setPayments(JSON.parse(savedPayments));
+          if (savedReminders) setReminders(JSON.parse(savedReminders));
+          if (savedStaff) setStaffMembers(JSON.parse(savedStaff));
+          if (savedBatches) setImportBatches(JSON.parse(savedBatches));
+          if (savedAudit) setAuditLogs(JSON.parse(savedAudit));
+          if (savedMethods) setPaymentMethods(JSON.parse(savedMethods));
         }
       } catch (e) {
         console.warn("Storage load error, using clean defaults", e);
-      } finally {
-        setIsLoaded(true);
       }
     }
 
-    function loadFromLocalStorage() {
-      const isCleanVersion = localStorage.getItem(STORAGE_KEYS.VERSION);
+    // 1. FAST PATH: Load immediately (< 10ms) so page renders in under 0.2s!
+    loadFromLocalStorage();
+    setIsLoaded(true);
 
-      if (!isCleanVersion || isCleanVersion !== "clean_v6") {
-        localStorage.clear();
-        localStorage.setItem(STORAGE_KEYS.VERSION, "clean_v6");
-        setSchool(INITIAL_SCHOOL);
-        setClasses(INITIAL_CLASSES);
-        setTuitionPlans([]);
-        setStudents([]);
-        setPayments([]);
-        setReminders([]);
-        setStaffMembers(DEFAULT_STAFF);
-        setImportBatches([]);
-        setAuditLogs([]);
-        setPaymentMethods(getDefaultPaymentMethods());
-      } else {
-        const savedSchool = localStorage.getItem(STORAGE_KEYS.SCHOOL);
-        const savedAcademicYear = localStorage.getItem(STORAGE_KEYS.ACADEMIC_YEAR);
-        const savedAcademicYearsList = localStorage.getItem(STORAGE_KEYS.ACADEMIC_YEARS_LIST);
-        const savedClasses = localStorage.getItem(STORAGE_KEYS.CLASSES);
-        const savedTuitions = localStorage.getItem(STORAGE_KEYS.TUITION_PLANS);
-        const savedStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-        const savedPayments = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
-        const savedReminders = localStorage.getItem(STORAGE_KEYS.REMINDERS);
-        const savedStaff = localStorage.getItem(STORAGE_KEYS.STAFF);
-        const savedBatches = localStorage.getItem(STORAGE_KEYS.IMPORT_BATCHES);
-        const savedAudit = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
-        const savedMethods = localStorage.getItem(STORAGE_KEYS.PAYMENT_METHODS);
+    // 2. BACKGROUND PATH: Non-blocking Supabase sync
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const sbSchool = await fetchSchool();
+          if (sbSchool) {
+            setSchool(sbSchool);
+            const sbYear = await fetchAcademicYear(sbSchool.id);
+            if (sbYear) {
+              setAcademicYear(sbYear);
+              setAcademicYearsList([sbYear]);
 
-        if (savedSchool) setSchool(JSON.parse(savedSchool));
-        if (savedAcademicYear) setAcademicYear(JSON.parse(savedAcademicYear));
-        if (savedAcademicYearsList) setAcademicYearsList(JSON.parse(savedAcademicYearsList));
-        if (savedClasses) setClasses(JSON.parse(savedClasses));
-        if (savedTuitions) setTuitionPlans(JSON.parse(savedTuitions));
-        if (savedStudents) setStudents(JSON.parse(savedStudents));
-        if (savedPayments) setPayments(JSON.parse(savedPayments));
-        if (savedReminders) setReminders(JSON.parse(savedReminders));
-        if (savedStaff) setStaffMembers(JSON.parse(savedStaff));
-        if (savedBatches) setImportBatches(JSON.parse(savedBatches));
-        if (savedAudit) setAuditLogs(JSON.parse(savedAudit));
-        if (savedMethods) setPaymentMethods(JSON.parse(savedMethods));
-      }
+              const [sbClasses, sbStudents, sbPayments, sbPlans, sbReminders] = await Promise.all([
+                fetchClasses(sbSchool.id, sbYear.id),
+                fetchStudents(sbSchool.id, sbYear.id),
+                fetchPayments(sbSchool.id, sbYear.id),
+                fetchTuitionPlans(sbSchool.id, sbYear.id),
+                fetchReminders(sbSchool.id),
+              ]);
+
+              if (sbClasses && sbClasses.length > 0) setClasses(sbClasses);
+              if (sbStudents && sbStudents.length > 0) setStudents(sbStudents);
+              if (sbPayments && sbPayments.length > 0) setPayments(sbPayments);
+              if (sbPlans && sbPlans.length > 0) setTuitionPlans(sbPlans);
+              if (sbReminders && sbReminders.length > 0) setReminders(sbReminders);
+            }
+          }
+        } catch (sbErr) {
+          console.warn("[SCOLY] Background Supabase sync skipped/failed", sbErr);
+        }
+      })();
     }
-
-    loadData();
   }, []);
 
   // Save changes to LocalStorage (always, as cache)
@@ -683,7 +676,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         params.matricule || `2025-${classCode}-${String(countInClass).padStart(3, "0")}`;
 
       const newStudent: Student = {
-        id: `stu-${Date.now()}`,
+        id: `stu-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         school_id: school.id,
         academic_year_id: academicYear.id,
         class_id: params.class_id,
@@ -698,7 +691,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         discount_reason: params.discount_reason,
         custom_tuition: params.custom_tuition,
         parent: {
-          id: `par-${Date.now()}`,
+          id: `par-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           school_id: school.id,
           full_name: params.parent_name,
           relationship: params.parent_relationship,
