@@ -1,0 +1,214 @@
+import { BatchProgress, ImportSourceType, ImportSummary, ValidatedImportRow } from "@/types/import";
+import { ClassRoom, Payment, PaymentMethod, School, Student } from "@/types/scoly";
+
+export interface BatchProcessingOptions {
+  rows: ValidatedImportRow[];
+  sourceType: ImportSourceType;
+  fileName?: string;
+  academicYearId: string;
+  academicYearName: string;
+  school: School;
+  existingStudents: Student[];
+  availableClasses: ClassRoom[];
+  batchSize?: number;
+  onProgress?: (progress: BatchProgress) => void;
+  // Fonctions de mutation du store
+  onAddStudent: (studentData: any) => Student;
+  onUpdateStudent: (id: string, updates: Partial<Student>) => void;
+  onAddPayment: (paymentData: any) => Payment;
+  onLogAudit: (action: string, entityType: string, entityId: string, payload: any) => void;
+}
+
+/**
+ * Traite les lignes d'import par lots asynchrones sans bloquer l'UI
+ */
+export async function executeBatchImport(options: BatchProcessingOptions): Promise<ImportSummary> {
+  const {
+    rows,
+    sourceType,
+    fileName,
+    academicYearId,
+    academicYearName,
+    school,
+    existingStudents,
+    availableClasses,
+    batchSize = 25,
+    onProgress,
+    onAddStudent,
+    onUpdateStudent,
+    onAddPayment,
+    onLogAudit,
+  } = options;
+
+  const totalRows = rows.length;
+  const totalBatches = Math.ceil(totalRows / batchSize) || 1;
+  const batchId = `import-${Date.now()}`;
+
+  let studentsImported = 0;
+  let studentsUpdated = 0;
+  let parentsAssociated = 0;
+  let paymentsImported = 0;
+  let rowsSkipped = 0;
+  let errorsCount = 0;
+
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const startIdx = batchIndex * batchSize;
+    const endIdx = Math.min(startIdx + batchSize, totalRows);
+    const currentChunk = rows.slice(startIdx, endIdx);
+
+    // Mettre à jour la progression
+    const processedCount = startIdx;
+    const percentage = Math.round((processedCount / totalRows) * 100);
+
+    if (onProgress) {
+      onProgress({
+        currentBatch: batchIndex + 1,
+        totalBatches,
+        processedRows: processedCount,
+        totalRows,
+        percentage,
+        status: "running",
+        currentActionDescription: `Importation du lot ${batchIndex + 1}/${totalBatches} (${endIdx}/${totalRows} lignes)...`,
+      });
+    }
+
+    // Pause asynchrone pour laisser le navigateur rafraîchir l'interface (60fps)
+    await new Promise((resolve) => setTimeout(resolve, 35));
+
+    // Traitement de chaque ligne du lot
+    for (const row of currentChunk) {
+      if (row.isExcluded || row.status === "error") {
+        rowsSkipped++;
+        if (row.status === "error") errorsCount++;
+        continue;
+      }
+
+      // Résolution de doublon
+      if (row.status === "duplicate" && row.duplicateInfo) {
+        if (row.duplicateInfo.action === "skip") {
+          rowsSkipped++;
+          continue;
+        }
+
+        if (row.duplicateInfo.action === "update") {
+          const targetId = row.duplicateInfo.matchedStudentId;
+          const updates: Partial<Student> = {};
+
+          if (row.parsedStudent.class_name) updates.class_name = row.parsedStudent.class_name;
+          if (row.parsedStudent.gender) updates.gender = row.parsedStudent.gender;
+          if (row.parsedStudent.birth_date) updates.birth_date = row.parsedStudent.birth_date;
+          if (row.parsedStudent.custom_tuition !== undefined) updates.custom_tuition = row.parsedStudent.custom_tuition;
+          if (row.parsedStudent.discount_amount !== undefined) {
+            updates.discount_amount = row.parsedStudent.discount_amount;
+            updates.discount_reason = row.parsedStudent.discount_reason;
+          }
+
+          onUpdateStudent(targetId, updates);
+          studentsUpdated++;
+
+          // Enregistrement d'un paiement si présent
+          if (row.parsedPayment && row.parsedPayment.amount > 0) {
+            onAddPayment({
+              student_id: targetId,
+              amount: row.parsedPayment.amount,
+              payment_method: row.parsedPayment.payment_method,
+              payment_date: row.parsedPayment.payment_date,
+              transaction_ref: row.parsedPayment.transaction_ref,
+              notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
+              recorded_by_name: "Import Intelligent",
+            });
+            paymentsImported++;
+          }
+          continue;
+        }
+      }
+
+      // Création d'un nouvel élève
+      // Trouver ou associer la classe
+      let classId = row.parsedStudent.class_id;
+      if (!classId) {
+        const found = availableClasses.find(
+          (c) => c.name.toLowerCase().trim() === row.parsedStudent.class_name.toLowerCase().trim()
+        );
+        classId = found ? found.id : availableClasses[0]?.id || "cls-default";
+      }
+
+      const createdStudent = onAddStudent({
+        first_name: row.parsedStudent.first_name,
+        last_name: row.parsedStudent.last_name,
+        gender: row.parsedStudent.gender,
+        birth_date: row.parsedStudent.birth_date,
+        class_id: classId,
+        class_name: row.parsedStudent.class_name,
+        matricule: row.parsedStudent.matricule,
+        custom_tuition: row.parsedStudent.custom_tuition,
+        discount_amount: row.parsedStudent.discount_amount,
+        discount_reason: row.parsedStudent.discount_reason,
+        parent_name: row.parsedParent?.full_name || `Parent de ${row.parsedStudent.last_name}`,
+        parent_relationship: row.parsedParent?.relationship || "Père",
+        parent_phone: row.parsedParent?.phone_primary || "—",
+        parent_whatsapp: row.parsedParent?.phone_whatsapp,
+        parent_profession: row.parsedParent?.profession,
+        parent_address: row.parsedParent?.address,
+      });
+
+      studentsImported++;
+      if (row.parsedParent?.phone_primary && row.parsedParent.phone_primary !== "—") {
+        parentsAssociated++;
+      }
+
+      // Enregistrement du paiement associé
+      if (row.parsedPayment && row.parsedPayment.amount > 0) {
+        onAddPayment({
+          student_id: createdStudent.id,
+          amount: row.parsedPayment.amount,
+          payment_method: row.parsedPayment.payment_method,
+          payment_date: row.parsedPayment.payment_date,
+          transaction_ref: row.parsedPayment.transaction_ref,
+          notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
+          recorded_by_name: "Import Intelligent",
+        });
+        paymentsImported++;
+      }
+    }
+  }
+
+  // Finaliser la progression à 100%
+  if (onProgress) {
+    onProgress({
+      currentBatch: totalBatches,
+      totalBatches,
+      processedRows: totalRows,
+      totalRows,
+      percentage: 100,
+      status: "completed",
+      currentActionDescription: "Importation terminée avec succès !",
+    });
+  }
+
+  const summary: ImportSummary = {
+    batchId,
+    sourceType,
+    fileName,
+    totalDetected: totalRows,
+    studentsImported,
+    studentsUpdated,
+    parentsAssociated,
+    paymentsImported,
+    rowsSkipped,
+    errorsCount,
+    importedAt: new Date().toISOString(),
+    academicYearId,
+    academicYearName,
+  };
+
+  // Enregistrement dans le journal d'audit
+  onLogAudit(
+    "IMPORT_DATA_BATCH",
+    "import_batch",
+    batchId,
+    summary
+  );
+
+  return summary;
+}
