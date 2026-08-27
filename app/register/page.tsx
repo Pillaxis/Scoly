@@ -39,8 +39,9 @@ export default function RegisterPage() {
       if (school.onboarding_completed === false) {
         router.push("/onboarding");
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
+
     }
   }, [isLoaded, currentUser, school.onboarding_completed, router]);
 

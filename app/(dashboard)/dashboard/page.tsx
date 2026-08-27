@@ -10,7 +10,7 @@ import { PaymentMethodsBreakdown } from "@/components/dashboard/PaymentMethodsBr
 import { RecentPaymentsSection } from "@/components/dashboard/RecentPaymentsSection";
 import { DebtorsPreviewSection } from "@/components/dashboard/DebtorsPreviewSection";
 import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
-import { useGlobalModals } from "./layout";
+import { useGlobalModals } from "../layout";
 import { useScoly } from "@/lib/store";
 
 export default function DashboardPage() {

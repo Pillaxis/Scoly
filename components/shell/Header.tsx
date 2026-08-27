@@ -29,7 +29,8 @@ export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderPro
       <header className="h-14 md:h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs">
         {/* Left Side: Mobile Logo & Inline Direct Search Bar */}
         <div className="flex items-center gap-3 flex-1 max-w-sm sm:max-w-md">
-          <Link href="/" className="md:hidden flex items-center gap-1.5 shrink-0">
+          <Link href="/dashboard" className="md:hidden flex items-center gap-1.5 shrink-0">
+
             <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-black text-sm shadow-xs">
               S
             </div>

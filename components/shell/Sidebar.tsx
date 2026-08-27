@@ -38,9 +38,10 @@ export function Sidebar() {
   const navItems: NavItem[] = [
     {
       label: "Tableau de bord",
-      href: "/",
+      href: "/dashboard",
       icon: LayoutDashboard,
     },
+
     {
       label: "Élèves",
       href: "/students",

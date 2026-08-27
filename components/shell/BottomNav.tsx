@@ -22,7 +22,7 @@ export function BottomNav({ onOpenPaymentModal }: BottomNavProps) {
   const pathname = usePathname();
   const { dashboardMetrics } = useScoly();
 
-  const isHome = pathname === "/";
+  const isHome = pathname === "/dashboard";
   const isStudents = pathname.startsWith("/students");
   const isPayments = pathname.startsWith("/payments");
   const isDebts = pathname.startsWith("/debts");
@@ -33,8 +33,9 @@ export function BottomNav({ onOpenPaymentModal }: BottomNavProps) {
       <div className="flex items-center justify-around px-2 py-1.5 max-w-lg mx-auto">
         {/* 1. Dashboard */}
         <Link
-          href="/"
+          href="/dashboard"
           prefetch={true}
+
           className={cn(
             "flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all duration-150 relative min-w-[56px] active:scale-95",
             isHome

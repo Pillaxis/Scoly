@@ -64,9 +64,10 @@ export default function OnboardingPage() {
       }
 
       if (storeSchool.onboarding_completed) {
-        router.push("/");
+        router.push("/dashboard");
         return;
       }
+
 
       setLocalSchool(storeSchool);
       setLocalAcademicYear(storeAcademicYear);
@@ -148,8 +149,9 @@ export default function OnboardingPage() {
         // Step 9: Finalize onboarding
         await completeOnboarding();
         startTransition(() => {
-          router.push("/?welcome=true");
+          router.push("/dashboard?welcome=true");
         });
+
       }
     } finally {
       setIsSubmitting(false);

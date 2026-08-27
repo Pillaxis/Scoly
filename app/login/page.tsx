@@ -33,7 +33,7 @@ export default function LoginPage() {
       if (school.onboarding_completed === false) {
         router.push("/onboarding");
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
     }
   }, [isLoaded, currentUser, school.onboarding_completed, router]);
@@ -62,10 +62,11 @@ export default function LoginPage() {
           if (school.onboarding_completed === false) {
             router.push("/onboarding");
           } else {
-            router.push("/");
+            router.push("/dashboard");
           }
         }, 800);
       } else {
+
         setErrorMsg(res.error || "Adresse email ou mot de passe incorrect.");
       }
     } catch (err: any) {
