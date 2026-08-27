@@ -130,13 +130,13 @@ export default function RegisterPage() {
             backgroundColor: "#0d2a63"
           }}
         >
-          {/* Top Logo (Clean Circle Mark + SCOLY, NO "SaaS" badge) */}
+          {/* Logo SCOLY Officiel */}
           <div className="relative z-10">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full border-2 border-white/90 flex items-center justify-center">
-                <div className="w-3 h-3 rounded-full bg-white" />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/30 border border-white/20">
+                S
               </div>
-              <span className="text-xl font-black tracking-wider text-white">SCOLY</span>
+              <span className="text-2xl font-black tracking-tight text-white">SCOLY</span>
             </div>
           </div>
 

@@ -53,10 +53,10 @@ export default function ForgotPasswordPage() {
         
         {/* Brand */}
         <div className="flex items-center justify-center gap-2.5">
-          <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center">
-            <div className="w-3 h-3 rounded-full bg-blue-600" />
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-md shadow-blue-500/25">
+            S
           </div>
-          <span className="text-xl font-black tracking-wider text-slate-900">SCOLY</span>
+          <span className="text-xl font-black tracking-tight text-slate-900">SCOLY</span>
         </div>
 
         {isSubmitted ? (
