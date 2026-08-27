@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { PlusCircle, Bell, User, Cloud, RefreshCw } from "lucide-react";
+import { PlusCircle, Bell } from "lucide-react";
 import { useScoly } from "@/lib/store";
 import { InlineHeaderSearch } from "./InlineHeaderSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
@@ -14,50 +14,9 @@ interface HeaderProps {
 }
 
 export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderProps) {
-  const { dashboardMetrics, currentUser, syncStatus, refreshFromSupabase } = useScoly();
+  const { dashboardMetrics, currentUser } = useScoly();
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await refreshFromSupabase();
-    } finally {
-      setTimeout(() => setIsRefreshing(false), 500);
-    }
-  };
-
-  const getSyncBadge = () => {
-    switch (syncStatus) {
-      case "synced":
-        return {
-          dot: "bg-emerald-500",
-          text: "En direct",
-          title: "Connecté & Synchronisé avec Supabase",
-        };
-      case "syncing":
-        return {
-          dot: "bg-blue-500 animate-spin",
-          text: "Sync...",
-          title: "Synchronisation en cours",
-        };
-      case "tables_missing":
-        return {
-          dot: "bg-amber-500 animate-pulse",
-          text: "Tables à créer",
-          title: "Schéma SQL à exécuter dans Supabase",
-        };
-      default:
-        return {
-          dot: "bg-slate-400",
-          text: "Hors ligne",
-          title: "Mode local",
-        };
-    }
-  };
-
-  const badge = getSyncBadge();
 
   return (
     <>
@@ -74,7 +33,7 @@ export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderPro
           <InlineHeaderSearch onSelectPaymentReceipt={onSelectPaymentReceipt} />
         </div>
 
-        {/* Right Side: Quick Actions, Live Sync Indicator, Notification Bell & Profile */}
+        {/* Right Side: Quick Action, Notification Bell & User Profile */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Quick Encaisser Button */}
           <button
@@ -84,18 +43,6 @@ export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderPro
           >
             <PlusCircle className="w-4 h-4" />
             <span>Encaisser</span>
-          </button>
-
-          {/* Live Supabase Sync Pill Button */}
-          <button
-            type="button"
-            onClick={handleRefresh}
-            title={badge.title}
-            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 border border-slate-200/80 transition-all cursor-pointer"
-          >
-            <span className={`w-2 h-2 rounded-full ${badge.dot}`} />
-            <span className="hidden lg:inline">{badge.text}</span>
-            <RefreshCw className={`w-3 h-3 text-slate-400 ${isRefreshing ? "animate-spin text-blue-600" : ""}`} />
           </button>
 
           {/* Functional Notification Bell with Popup */}
@@ -131,7 +78,7 @@ export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderPro
             type="button"
             onClick={() => setIsAuthModalOpen(true)}
             className="flex items-center gap-2 pl-0.5 cursor-pointer hover:opacity-90 transition-opacity"
-            title="Gérer votre compte et la synchronisation multi-appareils"
+            title="Votre compte utilisateur"
           >
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center shadow-xs">
               {currentUser?.full_name
