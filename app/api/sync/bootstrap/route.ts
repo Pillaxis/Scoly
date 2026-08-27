@@ -214,6 +214,7 @@ export async function POST(req: NextRequest) {
         name: school.name,
         code: school.code,
         slug: school.slug,
+        logo_url: school.logo_url || undefined,
         phone: school.phone,
         email: school.email,
         address: school.address,
@@ -222,6 +223,15 @@ export async function POST(req: NextRequest) {
         currency: school.currency,
         receipt_prefix: school.receipt_prefix,
         receipt_counter: school.receipt_counter,
+        education_types: school.education_types || [],
+        onboarding_completed: school.onboarding_completed ?? false,
+        onboarding_current_step: school.onboarding_current_step ?? 1,
+        notification_preferences: school.notification_preferences || {
+          unpaid_alerts: true,
+          upcoming_deadlines: true,
+          payment_received: true,
+          reminders_due: true,
+        },
       },
       academicYear: yearRes.data || {
         id: "00000000-0000-0000-0000-000000000010",

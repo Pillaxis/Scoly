@@ -62,6 +62,15 @@ export async function fetchSchool(schoolId?: string): Promise<School | null> {
       currency: data.currency || "FCFA",
       receipt_prefix: data.receipt_prefix || "REC-25-",
       receipt_counter: Number(data.receipt_counter) || 0,
+      education_types: data.education_types || [],
+      onboarding_completed: data.onboarding_completed ?? false,
+      onboarding_current_step: data.onboarding_current_step ?? 1,
+      notification_preferences: data.notification_preferences || {
+        unpaid_alerts: true,
+        upcoming_deadlines: true,
+        payment_received: true,
+        reminders_due: true,
+      },
     };
   } catch {
     return null;
@@ -85,6 +94,12 @@ export async function upsertSchool(school: Partial<School>): Promise<boolean> {
       receipt_counter: school.receipt_counter,
       updated_at: new Date().toISOString(),
     };
+
+    if (school.logo_url !== undefined) payload.logo_url = school.logo_url;
+    if (school.education_types !== undefined) payload.education_types = school.education_types;
+    if (school.onboarding_completed !== undefined) payload.onboarding_completed = school.onboarding_completed;
+    if (school.onboarding_current_step !== undefined) payload.onboarding_current_step = school.onboarding_current_step;
+    if (school.notification_preferences !== undefined) payload.notification_preferences = school.notification_preferences;
 
     if (school.code) {
       payload.code = school.code;

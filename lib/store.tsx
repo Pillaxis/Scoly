@@ -92,6 +92,9 @@ export interface AuthUser {
   id: string;
   email: string;
   full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
   role?: string;
 }
 
@@ -118,12 +121,27 @@ interface ScolyContextType {
   currentUser: AuthUser | null;
   loginUser: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   registerUser: (
-    email: string,
-    pass: string,
-    schoolName: string,
-    fullName: string
+    emailOrParams:
+      | string
+      | {
+          email: string;
+          pass?: string;
+          password?: string;
+          firstName: string;
+          lastName: string;
+          phone?: string;
+          schoolName?: string;
+        },
+    pass?: string,
+    schoolName?: string,
+    fullName?: string
   ) => Promise<{ success: boolean; error?: string }>;
   logoutUser: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Onboarding
+  saveOnboardingStep: (step: number, data?: Partial<School>) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 
   // Configurable Payment Methods
   paymentMethods: PaymentMethodConfig[];
@@ -409,6 +427,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               id: session.user.id,
               email: session.user.email || "",
               full_name: session.user.user_metadata?.full_name,
+              first_name: session.user.user_metadata?.first_name,
+              last_name: session.user.user_metadata?.last_name,
+              phone: session.user.user_metadata?.phone,
             };
             setCurrentUser(u);
             fetchAllFromSupabase(undefined, session.user.id);
@@ -426,6 +447,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               id: session.user.id,
               email: session.user.email || "",
               full_name: session.user.user_metadata?.full_name,
+              first_name: session.user.user_metadata?.first_name,
+              last_name: session.user.user_metadata?.last_name,
+              phone: session.user.user_metadata?.phone,
             };
             setCurrentUser(u);
             fetchAllFromSupabase(undefined, session.user.id);
@@ -516,7 +540,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     paymentMethods,
   ]);
 
-  // ─── 4. AUTHENTICATION HANDLERS ────────────────────────────────────────────
+  // ─── 4. AUTHENTICATION & ONBOARDING HANDLERS ──────────────────────────────
   const loginUser = useCallback(
     async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
       const client = getSupabaseBrowser();
@@ -531,6 +555,12 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (error) {
+          if (error.message.includes("Invalid login credentials")) {
+            return { success: false, error: "Adresse email ou mot de passe incorrect." };
+          }
+          if (error.message.includes("Email not confirmed")) {
+            return { success: false, error: "Veuillez confirmer votre adresse email pour continuer." };
+          }
           return { success: false, error: error.message };
         }
 
@@ -539,6 +569,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             id: data.user.id,
             email: data.user.email || "",
             full_name: data.user.user_metadata?.full_name,
+            first_name: data.user.user_metadata?.first_name,
+            last_name: data.user.user_metadata?.last_name,
+            phone: data.user.user_metadata?.phone,
           };
           setCurrentUser(u);
           await fetchAllFromSupabase(undefined, data.user.id);
@@ -554,15 +587,49 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   const registerUser = useCallback(
     async (
-      email: string,
-      pass: string,
-      schoolName: string,
-      fullName: string
+      emailOrParams:
+        | string
+        | {
+            email: string;
+            pass?: string;
+            password?: string;
+            firstName: string;
+            lastName: string;
+            phone?: string;
+            schoolName?: string;
+          },
+      passParam?: string,
+      schoolNameParam?: string,
+      fullNameParam?: string
     ): Promise<{ success: boolean; error?: string }> => {
       const client = getSupabaseBrowser();
       if (!client) {
         return { success: false, error: "Supabase non configuré." };
       }
+
+      let email = "";
+      let pass = "";
+      let firstName = "";
+      let lastName = "";
+      let phone = "";
+      let schoolName = "";
+
+      if (typeof emailOrParams === "object") {
+        email = emailOrParams.email;
+        pass = emailOrParams.pass || emailOrParams.password || "";
+        firstName = emailOrParams.firstName;
+        lastName = emailOrParams.lastName;
+        phone = emailOrParams.phone || "";
+        schoolName = emailOrParams.schoolName || `Établissement de ${firstName}`;
+      } else {
+        email = emailOrParams;
+        pass = passParam || "";
+        const parts = (fullNameParam || "").split(" ");
+        firstName = parts[0] || "";
+        lastName = parts.slice(1).join(" ") || "";
+      }
+
+      const fullName = `${firstName} ${lastName}`.trim() || email.split("@")[0];
 
       try {
         const { data, error } = await client.auth.signUp({
@@ -570,33 +637,48 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           password: pass,
           options: {
             data: {
-              full_name: fullName.trim(),
-              school_name: schoolName.trim(),
+              full_name: fullName,
+              first_name: firstName,
+              last_name: lastName,
+              phone: phone,
+              school_name: schoolName || "Mon Établissement Scolaire",
             },
           },
         });
 
         if (error) {
+          if (error.message.includes("User already registered")) {
+            return { success: false, error: "Un compte avec cette adresse email existe déjà." };
+          }
+          if (error.message.includes("Password should be at least")) {
+            return { success: false, error: "Le mot de passe doit comporter au moins 6 caractères." };
+          }
           return { success: false, error: error.message };
         }
 
         if (data.user) {
-          // Provision school via server API
+          // Provision school via server API with onboarding_completed = false
           await fetch("/api/auth/register-school", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               user_id: data.user.id,
               email: data.user.email,
-              full_name: fullName.trim(),
-              school_name: schoolName.trim(),
+              full_name: fullName,
+              first_name: firstName,
+              last_name: lastName,
+              phone: phone || null,
+              school_name: schoolName || "Mon Établissement Scolaire",
             }),
-          });
+          }).catch((err) => console.error("Register school API error:", err));
 
           const u: AuthUser = {
             id: data.user.id,
             email: data.user.email || "",
-            full_name: fullName.trim(),
+            full_name: fullName,
+            first_name: firstName,
+            last_name: lastName,
+            phone: phone,
           };
           setCurrentUser(u);
           await fetchAllFromSupabase(undefined, data.user.id);
@@ -611,16 +693,53 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     [fetchAllFromSupabase]
   );
 
-  const logoutUser = useCallback(async () => {
+  const resetPassword = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
     const client = getSupabaseBrowser();
-    if (client) {
-      await client.auth.signOut();
+    if (!client) {
+      return { success: false, error: "Supabase non configuré." };
     }
-    setCurrentUser(null);
-    localStorage.removeItem(STORAGE_KEYS.USER);
-    // Reload public default data
-    await fetchAllFromSupabase();
-  }, [fetchAllFromSupabase]);
+
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Erreur lors de la réinitialisation." };
+    }
+  }, []);
+
+  const saveOnboardingStep = useCallback(
+    async (step: number, data?: Partial<School>) => {
+      setSchool((prev) => {
+        const updated: School = {
+          ...prev,
+          ...(data || {}),
+          onboarding_current_step: step,
+        };
+        if (typeof window !== "undefined") {
+          localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(updated));
+        }
+        return updated;
+      });
+
+      if (isSupabaseConfigured) {
+        const payloadToSave: Partial<School> = {
+          ...(data || {}),
+          id: school.id,
+          onboarding_current_step: step,
+        };
+        upsertSchool(payloadToSave).catch((err) => {
+          console.debug("[Onboarding] Autosave step background error:", err);
+        });
+      }
+    },
+    [school.id]
+  );
 
   // ─── 5. PUSH ALL LOCAL DATA TO SUPABASE (ONE-CLICK MANUAL SYNC) ───────────
   const syncLocalToSupabase = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
@@ -656,6 +775,33 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: err?.message };
     }
   }, [school, academicYear, classes, students, payments, tuitionPlans, paymentMethods]);
+
+  const completeOnboarding = useCallback(async () => {
+    const updated: School = {
+      ...school,
+      onboarding_completed: true,
+      onboarding_current_step: 9,
+    };
+    setSchool(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(updated));
+    }
+    if (isSupabaseConfigured) {
+      await upsertSchool(updated).catch(() => {});
+      await syncLocalToSupabase().catch(() => {});
+    }
+  }, [school, syncLocalToSupabase]);
+
+  const logoutUser = useCallback(async () => {
+    const client = getSupabaseBrowser();
+    if (client) {
+      await client.auth.signOut().catch(() => {});
+    }
+    setCurrentUser(null);
+    localStorage.removeItem(STORAGE_KEYS.USER);
+    // Reload public default data
+    await fetchAllFromSupabase();
+  }, [fetchAllFromSupabase]);
 
   const refreshFromSupabase = useCallback(async () => {
     return await fetchAllFromSupabase(school.id, currentUser?.id);
@@ -1549,6 +1695,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         loginUser,
         registerUser,
         logoutUser,
+        resetPassword,
+        saveOnboardingStep,
+        completeOnboarding,
         paymentMethods,
         addPaymentMethod,
         updatePaymentMethod,

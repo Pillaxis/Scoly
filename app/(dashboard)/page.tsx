@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { PlusCircle, FileSpreadsheet } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { PlusCircle, FileSpreadsheet, X, Sparkles } from "lucide-react";
 import { MetricCards } from "@/components/dashboard/MetricCards";
 import { UrgentActionCenter } from "@/components/dashboard/UrgentActionCenter";
 import { RevenueEvolutionChart } from "@/components/dashboard/RevenueEvolutionChart";
@@ -16,6 +16,16 @@ import { useScoly } from "@/lib/store";
 export default function DashboardPage() {
   const { openPaymentModal, openReceiptModal, openReminderModal, openImportModal } = useGlobalModals();
   const { isLoaded } = useScoly();
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (sessionStorage.getItem("scoly_welcome_toast") === "true") {
+        setShowWelcome(true);
+        sessionStorage.removeItem("scoly_welcome_toast");
+      }
+    }
+  }, []);
 
   if (!isLoaded) {
     return <DashboardSkeleton />;
@@ -23,6 +33,33 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+      {/* Welcome Banner after Onboarding */}
+      {showWelcome && (
+        <div className="p-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white rounded-2xl shadow-lg flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-white text-lg shrink-0">
+              👋
+            </div>
+            <div>
+              <h2 className="text-sm font-extrabold text-white">
+                Bienvenue sur SCOLY !
+              </h2>
+              <p className="text-xs text-blue-100">
+                Votre établissement est parfaitement configuré et prêt. Vous pouvez maintenant inscrire vos élèves ou enregistrer vos premiers encaissements.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowWelcome(false)}
+            className="p-1.5 hover:bg-white/10 rounded-lg text-white/80 hover:text-white transition-colors cursor-pointer text-xs shrink-0"
+            title="Fermer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Banner / Welcome & Quick Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs">
         <div>

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, createContext, useContext } from "react";
+import React, { useState, createContext, useContext, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Header } from "@/components/shell/Header";
@@ -35,7 +36,19 @@ export function useGlobalModals() {
 }
 
 function DashboardShellContent({ children }: { children: React.ReactNode }) {
-  const { payments } = useScoly();
+  const router = useRouter();
+  const { payments, currentUser, school, isLoaded } = useScoly();
+
+  // Route protection
+  useEffect(() => {
+    if (isLoaded) {
+      if (!currentUser) {
+        router.push("/login");
+      } else if (school.onboarding_completed === false) {
+        router.push("/onboarding");
+      }
+    }
+  }, [isLoaded, currentUser, school.onboarding_completed, router]);
 
   // Modals state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);

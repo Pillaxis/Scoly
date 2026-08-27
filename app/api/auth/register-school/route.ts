@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { user_id, email, full_name, school_name, phone } = await req.json();
+    const { user_id, email, full_name, first_name, last_name, school_name, phone } = await req.json();
 
     if (!user_id || !email) {
       return NextResponse.json({ error: "user_id et email requis" }, { status: 400 });
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const code = "ECOLE-" + schoolId.slice(0, 6).toUpperCase();
     const slug = finalSchoolName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + schoolId.slice(0, 4);
 
-    // 1. Create School
+    // 1. Create School with onboarding flag
     const { error: schoolErr } = await supabase.from("schools").insert({
       id: schoolId,
       name: finalSchoolName,
@@ -47,6 +47,15 @@ export async function POST(req: NextRequest) {
       currency: "FCFA",
       receipt_prefix: "REC-25-",
       receipt_counter: 0,
+      education_types: [],
+      onboarding_completed: false,
+      onboarding_current_step: 1,
+      notification_preferences: {
+        unpaid_alerts: true,
+        upcoming_deadlines: true,
+        payment_received: true,
+        reminders_due: true,
+      },
     });
 
     if (schoolErr) {
@@ -55,12 +64,15 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Link User in school_members
+    const resolvedFirstName = first_name || full_name?.split(" ")[0] || email.split("@")[0];
+    const resolvedLastName = last_name || (full_name?.split(" ").slice(1).join(" ") || "Direction");
+
     await supabase.from("school_members").insert({
       school_id: schoolId,
       user_id,
       role: "director",
-      first_name: full_name || email.split("@")[0],
-      last_name: "Direction",
+      first_name: resolvedFirstName,
+      last_name: resolvedLastName,
       phone: phone || null,
       is_active: true,
     });

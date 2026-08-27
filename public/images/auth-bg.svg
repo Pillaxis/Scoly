@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1d4ed8" />
+      <stop offset="35%" stop-color="#0f2b6e" />
+      <stop offset="70%" stop-color="#09183d" />
+      <stop offset="100%" stop-color="#050d24" />
+    </linearGradient>
+
+    <!-- Glowing Light Line Gradient -->
+    <linearGradient id="glowLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.2" />
+      <stop offset="40%" stop-color="#60a5fa" stop-opacity="0.9" />
+      <stop offset="60%" stop-color="#93c5fd" stop-opacity="1" />
+      <stop offset="85%" stop-color="#38bdf8" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#2563eb" stop-opacity="0.1" />
+    </linearGradient>
+
+    <!-- Mountain 1 Gradient -->
+    <linearGradient id="mountain1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#13337a" />
+      <stop offset="100%" stop-color="#071330" />
+    </linearGradient>
+
+    <!-- Mountain 2 Gradient -->
+    <linearGradient id="mountain2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a1c47" />
+      <stop offset="100%" stop-color="#04091a" />
+    </linearGradient>
+
+    <!-- Mountain 3 Gradient -->
+    <linearGradient id="mountain3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06122d" />
+      <stop offset="100%" stop-color="#02050f" />
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="neonGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur1" />
+      <feGaussianBlur stdDeviation="18" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Soft Mist Glow Filter -->
+    <filter id="mistGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="30" />
+    </filter>
+  </defs>
+
+  <!-- Sky Background -->
+  <rect width="800" height="1000" fill="url(#bgGrad)" />
+
+  <!-- Ambient Light Mist -->
+  <ellipse cx="400" cy="380" rx="350" ry="120" fill="#38bdf8" opacity="0.15" filter="url(#mistGlow)" />
+  <ellipse cx="320" cy="350" rx="200" ry="80" fill="#60a5fa" opacity="0.2" filter="url(#mistGlow)" />
+
+  <!-- Subtle Stars / Particle Dots -->
+  <g fill="#ffffff" opacity="0.4">
+    <circle cx="120" cy="120" r="1.2" />
+    <circle cx="280" cy="80" r="1.5" opacity="0.6" />
+    <circle cx="650" cy="140" r="1.2" />
+    <circle cx="520" cy="90" r="1" />
+    <circle cx="710" cy="220" r="1.5" opacity="0.5" />
+    <circle cx="180" cy="240" r="1" />
+    <circle cx="430" cy="160" r="1.2" />
+    <circle cx="340" cy="210" r="0.8" />
+  </g>
+
+  <!-- Mountain Layer 1 (Back Ridge) -->
+  <path d="M-50,480 Q150,380 340,330 T750,420 L850,520 L850,1050 L-50,1050 Z" fill="url(#mountain1)" />
+
+  <!-- Glowing Ridge Edge -->
+  <path d="M-50,480 Q150,380 340,330 T750,420 L850,520" fill="none" stroke="url(#glowLineGrad)" stroke-width="4" filter="url(#neonGlow)" />
+  <path d="M-50,480 Q150,380 340,330 T750,420 L850,520" fill="none" stroke="#e0f2fe" stroke-width="1.5" />
+
+  <!-- Secondary subtle light stream -->
+  <path d="M220,360 Q340,335 480,365 T820,440" fill="none" stroke="#93c5fd" stroke-width="2" opacity="0.6" filter="url(#neonGlow)" />
+
+  <!-- Mountain Layer 2 (Middle Smooth Slope) -->
+  <path d="M-50,560 Q220,440 500,490 T850,600 L850,1050 L-50,1050 Z" fill="url(#mountain2)" opacity="0.9" />
+
+  <!-- Subtle Accent Light on Layer 2 -->
+  <path d="M-50,560 Q220,440 500,490 T850,600" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.4" filter="url(#neonGlow)" />
+
+  <!-- Mountain Layer 3 (Foreground Deep Base) -->
+  <path d="M-50,680 Q300,580 650,660 T850,720 L850,1050 L-50,1050 Z" fill="url(#mountain3)" />
+
+  <!-- Foreground Soft Deep Fog Gradient -->
+  <rect y="700" width="800" height="300" fill="url(#mountain3)" opacity="0.95" />
+</svg>

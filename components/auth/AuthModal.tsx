@@ -195,7 +195,8 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   type="button"
                   onClick={async () => {
                     await logoutUser();
-                    setSuccessMsg("Déconnecté avec succès.");
+                    onClose();
+                    window.location.href = "/login";
                   }}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >

@@ -13,6 +13,15 @@ export const INITIAL_SCHOOL: School = {
   currency: "FCFA",
   receipt_prefix: "REC-25-",
   receipt_counter: 0,
+  education_types: [],
+  onboarding_completed: false,
+  onboarding_current_step: 1,
+  notification_preferences: {
+    unpaid_alerts: true,
+    upcoming_deadlines: true,
+    payment_received: true,
+    reminders_due: true,
+  },
 };
 
 export const INITIAL_ACADEMIC_YEAR: AcademicYear = {

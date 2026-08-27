@@ -1,233 +1,260 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  School as SchoolIcon,
   Mail,
   Lock,
-  User,
   ArrowRight,
   CheckCircle2,
   AlertCircle,
-  Smartphone,
-  Laptop,
-  ArrowLeft,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useScoly } from "@/lib/store";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { loginUser, registerUser, currentUser } = useScoly();
+  const { loginUser, currentUser, school, isLoaded } = useScoly();
 
-  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [schoolName, setSchoolName] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Auto redirect if already logged in
+  useEffect(() => {
+    if (isLoaded && currentUser) {
+      if (school.onboarding_completed === false) {
+        router.push("/onboarding");
+      } else {
+        router.push("/");
+      }
+    }
+  }, [isLoaded, currentUser, school.onboarding_completed, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    if (!email.trim()) {
+      setErrorMsg("Veuillez saisir votre adresse e-mail.");
+      return;
+    }
+    if (!password) {
+      setErrorMsg("Veuillez saisir votre mot de passe.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      if (mode === "login") {
-        const res = await loginUser(email, password);
-        if (res.success) {
-          setSuccessMsg("Connexion réussie ! Redirection...");
-          setTimeout(() => router.push("/"), 1200);
-        } else {
-          setErrorMsg(res.error || "Identifiants incorrects.");
-        }
+      const res = await loginUser(email, password);
+      if (res.success) {
+        setSuccessMsg("Connexion réussie ! Redirection en cours...");
+        setTimeout(() => {
+          if (school.onboarding_completed === false) {
+            router.push("/onboarding");
+          } else {
+            router.push("/");
+          }
+        }, 800);
       } else {
-        if (!schoolName.trim()) {
-          setErrorMsg("Veuillez saisir le nom de votre établissement.");
-          setLoading(false);
-          return;
-        }
-        const res = await registerUser(email, password, schoolName, fullName);
-        if (res.success) {
-          setSuccessMsg("Votre école a été créée avec succès ! Redirection...");
-          setTimeout(() => router.push("/"), 1500);
-        } else {
-          setErrorMsg(res.error || "Échec de l'inscription.");
-        }
+        setErrorMsg(res.error || "Adresse email ou mot de passe incorrect.");
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || "Erreur de connexion.");
+      setErrorMsg(err?.message || "Une erreur est survenue lors de la connexion.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-slate-100 font-sans">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md px-4">
-        {/* Brand */}
-        <div className="flex items-center justify-center gap-2.5 mb-6">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/30">
-            S
+    <div className="min-h-screen bg-gradient-to-br from-[#c7d2fe] via-[#a5b4fc] to-[#818cf8] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans relative overflow-hidden">
+      
+      {/* Subtle Dot Pattern Overlay */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-25"
+        style={{
+          backgroundImage: "radial-gradient(#4338ca 1.2px, transparent 1.2px)",
+          backgroundSize: "24px 24px"
+        }}
+      />
+
+      {/* Main Floating Modal Card */}
+      <div className="w-full max-w-4xl bg-white rounded-[32px] shadow-[0_25px_70px_-15px_rgba(30,27,75,0.35)] overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[530px] border border-white/60 relative z-10">
+        
+        {/* =========================================================================
+            PANNEAU GAUCHE : Visuel Élégant avec Illustration Montagne / Onde Bleue
+            ========================================================================= */}
+        <div 
+          className="md:col-span-5 p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden bg-cover bg-center text-white"
+          style={{
+            backgroundImage: "url('/images/auth-bg.svg')",
+            backgroundColor: "#0d2a63"
+          }}
+        >
+          {/* Top Logo (Clean Circle Mark + SCOLY, NO "SaaS" badge) */}
+          <div className="relative z-10">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full border-2 border-white/90 flex items-center justify-center">
+                <div className="w-3 h-3 rounded-full bg-white" />
+              </div>
+              <span className="text-xl font-black tracking-wider text-white">SCOLY</span>
+            </div>
           </div>
-          <span className="text-2xl font-black tracking-tight text-white">SCOLY</span>
+
+          {/* Middle/Bottom Welcome Typography */}
+          <div className="my-10 relative z-10 space-y-3">
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-[1.15]">
+              Bonjour &<br />bienvenue !
+            </h1>
+            <p className="text-xs text-slate-200/90 leading-relaxed max-w-xs pt-1 font-normal">
+              Centralisez vos élèves, paiements, scolarités et impayés dans un seul espace intelligent.
+            </p>
+
+            <div className="pt-2">
+              <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-white/15 text-white text-[11px] font-semibold backdrop-blur-md border border-white/20">
+                Gestion Scolaire Simplifiée
+              </span>
+            </div>
+          </div>
+
+          {/* Bottom subtle indicator */}
+          <div className="relative z-10 text-[10px] text-white/50">
+            © SCOLY • Plateforme Administrative & Financière
+          </div>
         </div>
 
-        <h2 className="text-center text-2xl font-extrabold tracking-tight text-white">
-          {mode === "login" ? "Accédez à votre espace scolaire" : "Inscrivez votre établissement"}
-        </h2>
-        <p className="mt-1.5 text-center text-xs text-slate-400">
-          Gestion des encaissements et scolarité 100% synchronisée en direct
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-slate-950/80 backdrop-blur-xl py-8 px-6 sm:px-10 shadow-2xl rounded-3xl border border-slate-800 space-y-6">
-          {/* Multi-Device Banner */}
-          <div className="p-3.5 bg-blue-950/40 border border-blue-800/50 rounded-2xl flex items-center gap-3 text-xs text-blue-200">
-            <div className="flex items-center gap-1 text-blue-400 shrink-0">
-              <Laptop className="w-4 h-4" />
-              <Smartphone className="w-4 h-4" />
-            </div>
-            <span>
-              Accès multi-écrans : retrouvez vos données sur votre PC de bureau, ordinateur portable ou téléphone.
-            </span>
-          </div>
-
-          {/* Alerts */}
-          {errorMsg && (
-            <div className="p-3.5 bg-rose-950/50 border border-rose-800 text-rose-200 rounded-2xl text-xs flex items-start gap-2 animate-in fade-in">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="p-3.5 bg-emerald-950/50 border border-emerald-800 text-emerald-200 rounded-2xl text-xs flex items-start gap-2 animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <span>{successMsg}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === "register" && (
-              <>
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Nom de l&apos;Établissement Scolaire *
-                  </label>
-                  <div className="relative">
-                    <SchoolIcon className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                    <input
-                      type="text"
-                      placeholder="Ex: Complexe Scolaire Lumière"
-                      value={schoolName}
-                      onChange={(e) => setSchoolName(e.target.value)}
-                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 placeholder:font-normal focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Votre Nom & Prénom
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                    <input
-                      type="text"
-                      placeholder="Ex: Paul Mensah"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-medium text-white placeholder:text-slate-500 placeholder:font-normal focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </>
+        {/* =========================================================================
+            PANNEAU DROIT : Formulaire Épuré & Cartes de Champs Adaptées
+            ========================================================================= */}
+        <div className="md:col-span-7 p-8 sm:p-10 lg:p-12 flex flex-col justify-center bg-white">
+          <div className="max-w-sm w-full mx-auto space-y-5">
+            
+            {/* Error & Success Alerts */}
+            {errorMsg && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs flex items-start gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{errorMsg}</span>
+              </div>
             )}
 
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                Adresse Email *
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                <input
-                  type="email"
-                  placeholder="direction@mon-ecole.tg"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 placeholder:font-normal focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
+            {successMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs flex items-start gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="leading-relaxed font-semibold">{successMsg}</span>
               </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-3.5">
+              
+              {/* Field 1: Email */}
+              <div className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-2 sm:p-2.5 flex items-center gap-3 shadow-2xs focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white focus-within:border-transparent transition-all">
+                <div className="w-9 h-9 rounded-xl bg-blue-100/70 text-blue-600 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none mb-1">
+                    Adresse e-mail
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="nom@ecole.tg"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-none placeholder:text-slate-400 placeholder:font-normal"
+                  />
+                </div>
+              </div>
+
+              {/* Field 2: Password */}
+              <div className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-2 sm:p-2.5 flex items-center gap-3 shadow-2xs focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white focus-within:border-transparent transition-all">
+                <div className="w-9 h-9 rounded-xl bg-blue-100/70 text-blue-600 flex items-center justify-center shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none mb-1">
+                    Mot de passe
+                  </label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-none placeholder:text-slate-400 placeholder:font-normal"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 cursor-pointer shrink-0"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Options: Remember me & Forgot Password */}
+              <div className="flex items-center justify-between text-xs pt-1 px-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-600 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>Se souvenir de moi</span>
+                </label>
+
+                <Link
+                  href="/forgot-password"
+                  className="text-slate-500 hover:text-blue-600 font-medium transition-colors"
+                >
+                  Mot de passe oublié ?
+                </Link>
+              </div>
+
+              {/* Login Button (Clean Elevated White Card Button) */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-800 font-extrabold rounded-2xl border border-slate-200/90 shadow-md shadow-slate-200/60 hover:shadow-lg transition-all text-xs cursor-pointer flex items-center justify-center gap-2 mt-2"
+              >
+                <span>{loading ? "Connexion en cours..." : "Se connecter"}</span>
+                <ArrowRight className="w-4 h-4 text-slate-500" />
+              </button>
+            </form>
+
+            {/* Bottom Register Prompt + Blue Pill Button */}
+            <div className="pt-4 text-center space-y-2.5">
+              <p className="text-xs text-slate-400 font-medium">
+                Vous n&apos;avez pas encore de compte ?
+              </p>
+              
+              <Link
+                href="/register"
+                className="w-full py-3.5 bg-gradient-to-r from-[#38bdf8] via-[#2563eb] to-[#1d4ed8] hover:from-[#0284c7] hover:to-[#1e40af] active:scale-[0.99] text-white font-extrabold rounded-2xl shadow-lg shadow-blue-500/25 transition-all text-xs cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Créer un compte</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                Mot de passe *
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                <input
-                  type="password"
-                  placeholder="••••••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-bold text-white placeholder:text-slate-500 placeholder:font-normal focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                  minLength={6}
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 active:scale-98 disabled:opacity-50 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-blue-600/30 transition-all cursor-pointer mt-5"
-            >
-              <span>
-                {loading
-                  ? "Traitement en cours..."
-                  : mode === "login"
-                  ? "Se Connecter"
-                  : "Créer mon Compte"}
-              </span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-
-          <div className="pt-2 text-center border-t border-slate-800/80">
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === "login" ? "register" : "login");
-                setErrorMsg(null);
-              }}
-              className="text-xs text-blue-400 hover:text-blue-300 font-bold transition-colors cursor-pointer"
-            >
-              {mode === "login"
-                ? "Nouvel établissement ? Créez un compte ici"
-                : "Déjà un compte ? Connectez-vous ici"}
-            </button>
-          </div>
-
-          <div className="text-center pt-2">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Retourner à l&apos;application</span>
-            </Link>
           </div>
         </div>
+
       </div>
     </div>
   );

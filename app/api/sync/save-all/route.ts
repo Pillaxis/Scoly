@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const yearId = academicYear?.id || "00000000-0000-0000-0000-000000000010";
 
     // 1. Upsert School
-    await supabase.from("schools").upsert({
+    const schoolPayload: any = {
       id: schoolId,
       name: school.name || "Mon Établissement Scolaire",
       code: school.code || "ECOLE-001",
@@ -32,7 +32,15 @@ export async function POST(req: NextRequest) {
       receipt_prefix: school.receipt_prefix || "REC-25-",
       receipt_counter: school.receipt_counter || 0,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    if (school.logo_url !== undefined) schoolPayload.logo_url = school.logo_url;
+    if (school.education_types !== undefined) schoolPayload.education_types = school.education_types;
+    if (school.onboarding_completed !== undefined) schoolPayload.onboarding_completed = school.onboarding_completed;
+    if (school.onboarding_current_step !== undefined) schoolPayload.onboarding_current_step = school.onboarding_current_step;
+    if (school.notification_preferences !== undefined) schoolPayload.notification_preferences = school.notification_preferences;
+
+    await supabase.from("schools").upsert(schoolPayload);
 
     // 2. Upsert Academic Year
     if (academicYear) {

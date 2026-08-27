@@ -27,6 +27,19 @@ export type PaymentMethod = string;
 
 export type PaymentStatus = 'up_to_date' | 'upcoming' | 'late' | 'critical' | 'credit';
 
+export interface NotificationPreferences {
+  unpaid_alerts: boolean;
+  upcoming_deadlines: boolean;
+  payment_received: boolean;
+  reminders_due: boolean;
+}
+
+export interface OnboardingUserInvite {
+  name: string;
+  email: string;
+  role: StaffRole;
+}
+
 export interface School {
   id: string;
   name: string;
@@ -41,6 +54,10 @@ export interface School {
   currency: string;
   receipt_prefix: string;
   receipt_counter: number;
+  education_types?: string[];
+  onboarding_completed?: boolean;
+  onboarding_current_step?: number;
+  notification_preferences?: NotificationPreferences;
 }
 
 export interface AcademicYear {
