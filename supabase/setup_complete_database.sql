@@ -1,11 +1,10 @@
 -- ==============================================================================
--- SCOLY SAAS V1 — SCHÉMA COMPLET ET DÉPLOIEMENT SUPABASE POSTGRESQL
+-- SCOLY SAAS V1 — SCHÉMA COMPLET ET DÉPLOIEMENT SUPABASE POSTGRESQL (STRICT RLS)
 -- ==============================================================================
--- Ce script configure l'intégralité de la base de données SCOLY :
 -- 1. Tables multi-établissements (écoles, années, classes, élèves, paiements...)
 -- 2. Procédures transactionnelles (enregistrement de paiement, grilles tarifaires)
 -- 3. RLS (Row Level Security) pour isolation stricte par école
--- 4. Trigger automatique à la création de compte utilisateur (multi-appareils)
+-- 4. Trigger automatique à la création de compte utilisateur
 -- 5. Données initiales et structure par défaut
 -- ==============================================================================
 
@@ -48,6 +47,10 @@ CREATE TABLE IF NOT EXISTS schools (
     currency VARCHAR(10) DEFAULT 'FCFA',
     receipt_prefix VARCHAR(10) DEFAULT 'REC-25-',
     receipt_counter INT DEFAULT 0,
+    education_types TEXT[] DEFAULT '{}',
+    onboarding_completed BOOLEAN DEFAULT false,
+    onboarding_current_step INT DEFAULT 1,
+    notification_preferences JSONB DEFAULT '{"unpaid_alerts": true, "upcoming_deadlines": true, "payment_received": true, "reminders_due": true}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -250,7 +253,7 @@ CREATE INDEX IF NOT EXISTS idx_tuition_plans_class ON tuition_plans(school_id, c
 CREATE INDEX IF NOT EXISTS idx_payment_methods_school ON payment_methods_config(school_id, order_index);
 CREATE INDEX IF NOT EXISTS idx_import_batches_school ON import_batches(school_id, created_at DESC);
 
--- ─── 4. FONCTION TRANSACTIONNELLE DE PAIEMENT SÉCURISÉ ─────────────────────────
+-- ─── 4. PROCÉDURE TRANSACTIONNELLE DE PAIEMENT SÉCURISÉ ────────────────────────
 CREATE OR REPLACE FUNCTION record_payment_v2(
     p_school_id UUID,
     p_academic_year_id UUID,
@@ -361,7 +364,7 @@ BEGIN
 END;
 $$;
 
--- ─── 5. ROW LEVEL SECURITY (RLS) & ISOLATION MULTI-TENANT ─────────────────────
+-- ─── 5. ROW LEVEL SECURITY (RLS) & ISOLATION MULTI-TENANT STRICTE ─────────────
 ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
 ALTER TABLE academic_years ENABLE ROW LEVEL SECURITY;
 ALTER TABLE school_members ENABLE ROW LEVEL SECURITY;
@@ -377,59 +380,113 @@ ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE import_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Helper pour retrouver le tenant courant
+-- Helper pour identifier l'école de l'utilisateur connecté
 CREATE OR REPLACE FUNCTION current_user_school_id()
 RETURNS UUID AS $$
-    SELECT school_id FROM school_members 
+    SELECT school_id FROM public.school_members 
     WHERE user_id = auth.uid() AND is_active = true 
     LIMIT 1;
 $$ LANGUAGE SQL STABLE SECURITY DEFINER;
 
--- Politiques RLS généreuses et sécurisées (permettent aux utilisateurs de leur école et aux requêtes anonymes configurées de fonctionner)
-DROP POLICY IF EXISTS schools_policy ON schools;
-CREATE POLICY schools_policy ON schools FOR ALL USING (true) WITH CHECK (true);
+-- 5.1 Politiques Écoles
+DROP POLICY IF EXISTS tenant_schools_isolation ON schools;
+CREATE POLICY tenant_schools_isolation ON schools
+    FOR ALL TO authenticated
+    USING (id = current_user_school_id() OR id IN (SELECT school_id FROM public.school_members WHERE user_id = auth.uid()))
+    WITH CHECK (id = current_user_school_id() OR id IN (SELECT school_id FROM public.school_members WHERE user_id = auth.uid()));
 
-DROP POLICY IF EXISTS academic_years_policy ON academic_years;
-CREATE POLICY academic_years_policy ON academic_years FOR ALL USING (true) WITH CHECK (true);
+-- 5.2 Politiques Membres
+DROP POLICY IF EXISTS tenant_school_members_isolation ON school_members;
+CREATE POLICY tenant_school_members_isolation ON school_members
+    FOR ALL TO authenticated
+    USING (user_id = auth.uid() OR school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS school_members_policy ON school_members;
-CREATE POLICY school_members_policy ON school_members FOR ALL USING (true) WITH CHECK (true);
+-- 5.3 Politiques Années Scolaires
+DROP POLICY IF EXISTS tenant_academic_years_isolation ON academic_years;
+CREATE POLICY tenant_academic_years_isolation ON academic_years
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS classes_policy ON classes;
-CREATE POLICY classes_policy ON classes FOR ALL USING (true) WITH CHECK (true);
+-- 5.4 Politiques Classes
+DROP POLICY IF EXISTS tenant_classes_isolation ON classes;
+CREATE POLICY tenant_classes_isolation ON classes
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS tuition_plans_policy ON tuition_plans;
-CREATE POLICY tuition_plans_policy ON tuition_plans FOR ALL USING (true) WITH CHECK (true);
+-- 5.5 Politiques Grilles Tarifaires
+DROP POLICY IF EXISTS tenant_tuition_plans_isolation ON tuition_plans;
+CREATE POLICY tenant_tuition_plans_isolation ON tuition_plans
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS tuition_installments_policy ON tuition_installments;
-CREATE POLICY tuition_installments_policy ON tuition_installments FOR ALL USING (true) WITH CHECK (true);
+-- 5.6 Politiques Échéances
+DROP POLICY IF EXISTS tenant_tuition_installments_isolation ON tuition_installments;
+CREATE POLICY tenant_tuition_installments_isolation ON tuition_installments
+    FOR ALL TO authenticated
+    USING (tuition_plan_id IN (SELECT id FROM tuition_plans WHERE school_id = current_user_school_id()))
+    WITH CHECK (tuition_plan_id IN (SELECT id FROM tuition_plans WHERE school_id = current_user_school_id()));
 
-DROP POLICY IF EXISTS parents_policy ON parents;
-CREATE POLICY parents_policy ON parents FOR ALL USING (true) WITH CHECK (true);
+-- 5.7 Politiques Parents
+DROP POLICY IF EXISTS tenant_parents_isolation ON parents;
+CREATE POLICY tenant_parents_isolation ON parents
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS students_policy ON students;
-CREATE POLICY students_policy ON students FOR ALL USING (true) WITH CHECK (true);
+-- 5.8 Politiques Élèves
+DROP POLICY IF EXISTS tenant_students_isolation ON students;
+CREATE POLICY tenant_students_isolation ON students
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS student_parents_policy ON student_parents;
-CREATE POLICY student_parents_policy ON student_parents FOR ALL USING (true) WITH CHECK (true);
+-- 5.9 Politiques Liaisons Élèves-Parents
+DROP POLICY IF EXISTS tenant_student_parents_isolation ON student_parents;
+CREATE POLICY tenant_student_parents_isolation ON student_parents
+    FOR ALL TO authenticated
+    USING (student_id IN (SELECT id FROM students WHERE school_id = current_user_school_id()))
+    WITH CHECK (student_id IN (SELECT id FROM students WHERE school_id = current_user_school_id()));
 
-DROP POLICY IF EXISTS payments_policy ON payments;
-CREATE POLICY payments_policy ON payments FOR ALL USING (true) WITH CHECK (true);
+-- 5.10 Politiques Paiements
+DROP POLICY IF EXISTS tenant_payments_isolation ON payments;
+CREATE POLICY tenant_payments_isolation ON payments
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS payment_methods_config_policy ON payment_methods_config;
-CREATE POLICY payment_methods_config_policy ON payment_methods_config FOR ALL USING (true) WITH CHECK (true);
+-- 5.11 Politiques Moyens de Paiement
+DROP POLICY IF EXISTS tenant_payment_methods_isolation ON payment_methods_config;
+CREATE POLICY tenant_payment_methods_isolation ON payment_methods_config
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS reminders_policy ON reminders;
-CREATE POLICY reminders_policy ON reminders FOR ALL USING (true) WITH CHECK (true);
+-- 5.12 Politiques Relances
+DROP POLICY IF EXISTS tenant_reminders_isolation ON reminders;
+CREATE POLICY tenant_reminders_isolation ON reminders
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS import_batches_policy ON import_batches;
-CREATE POLICY import_batches_policy ON import_batches FOR ALL USING (true) WITH CHECK (true);
+-- 5.13 Politiques Import Batches
+DROP POLICY IF EXISTS tenant_import_batches_isolation ON import_batches;
+CREATE POLICY tenant_import_batches_isolation ON import_batches
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
-DROP POLICY IF EXISTS audit_logs_policy ON audit_logs;
-CREATE POLICY audit_logs_policy ON audit_logs FOR ALL USING (true) WITH CHECK (true);
+-- 5.14 Politiques Audit Logs
+DROP POLICY IF EXISTS tenant_audit_logs_isolation ON audit_logs;
+CREATE POLICY tenant_audit_logs_isolation ON audit_logs
+    FOR ALL TO authenticated
+    USING (school_id = current_user_school_id())
+    WITH CHECK (school_id = current_user_school_id());
 
 -- ─── 6. TRIGGER AUTOMATIQUE POUR TOUT NOUVEAU COMPTE UTILISATEUR ──────────────
--- Dès qu'un compte s'enregistre (sur PC, Mobile ou Tablette), il obtient instantanément son école et ses données
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -439,7 +496,7 @@ DECLARE
     v_user_name TEXT := COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1));
 BEGIN
     -- 1. Création de l'école
-    INSERT INTO public.schools (id, name, code, slug, phone, email, address, city, country, currency, receipt_prefix, receipt_counter)
+    INSERT INTO public.schools (id, name, code, slug, phone, email, address, city, country, currency, receipt_prefix, receipt_counter, onboarding_completed, onboarding_current_step)
     VALUES (
         v_school_id,
         v_school_name,
@@ -452,7 +509,9 @@ BEGIN
         'Togo',
         'FCFA',
         'REC-25-',
-        0
+        0,
+        false,
+        1
     );
 
     -- 2. Association du membre comme Directeur/Propriétaire
@@ -511,55 +570,3 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- ─── 7. SEED INITIAL DE L'ÉTABLISSEMENT PRINCIPAL ─────────────────────────────
-INSERT INTO schools (id, name, code, slug, phone, email, address, city, country, currency, receipt_prefix, receipt_counter)
-VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'Mon Établissement Scolaire',
-    'ECOLE-001',
-    'mon-ecole',
-    '+228 90 00 00 00',
-    'direction@ecole.tg',
-    'Quartier Administratif',
-    'Lomé',
-    'Togo',
-    'FCFA',
-    'REC-25-',
-    0
-) ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO academic_years (id, school_id, name, start_date, end_date, is_current)
-VALUES (
-    '00000000-0000-0000-0000-000000000010',
-    '00000000-0000-0000-0000-000000000001',
-    '2025-2026',
-    '2025-09-15',
-    '2026-06-30',
-    true
-) ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO classes (id, school_id, academic_year_id, name, level, order_index) VALUES
-('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'CI', 'Primaire', 1),
-('00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'CP', 'Primaire', 2),
-('00000000-0000-0000-0000-000000000103', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'CE1', 'Primaire', 3),
-('00000000-0000-0000-0000-000000000104', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'CE2', 'Primaire', 4),
-('00000000-0000-0000-0000-000000000105', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'CM1', 'Primaire', 5),
-('00000000-0000-0000-0000-000000000106', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'CM2', 'Primaire', 6),
-('00000000-0000-0000-0000-000000000107', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', '6ème A', 'Collège', 7),
-('00000000-0000-0000-0000-000000000108', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', '5ème A', 'Collège', 8),
-('00000000-0000-0000-0000-000000000109', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', '4ème A', 'Collège', 9),
-('00000000-0000-0000-0000-000000000110', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', '3ème A', 'Collège', 10),
-('00000000-0000-0000-0000-000000000111', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', '2nde CD', 'Lycée', 11),
-('00000000-0000-0000-0000-000000000112', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', '1ère D', 'Lycée', 12),
-('00000000-0000-0000-0000-000000000113', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000010', 'Terminale D', 'Lycée', 13)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO payment_methods_config (school_id, key, label, is_active, order_index) VALUES
-('00000000-0000-0000-0000-000000000001', 'cash', 'Espèces', true, 0),
-('00000000-0000-0000-0000-000000000001', 'tmoney', 'TMoney', true, 1),
-('00000000-0000-0000-0000-000000000001', 'flooz', 'Flooz', true, 2),
-('00000000-0000-0000-0000-000000000001', 'bank_transfer', 'Virement bancaire', true, 3),
-('00000000-0000-0000-0000-000000000001', 'cheque', 'Chèque', true, 4),
-('00000000-0000-0000-0000-000000000001', 'other', 'Autre', true, 5)
-ON CONFLICT (school_id, key) DO NOTHING;

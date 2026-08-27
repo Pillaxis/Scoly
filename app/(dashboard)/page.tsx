@@ -20,9 +20,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (sessionStorage.getItem("scoly_welcome_toast") === "true") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("welcome") === "true") {
         setShowWelcome(true);
-        sessionStorage.removeItem("scoly_welcome_toast");
+        // Clean URL without reload
+        window.history.replaceState({}, "", window.location.pathname);
       }
     }
   }, []);

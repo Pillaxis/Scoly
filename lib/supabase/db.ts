@@ -941,4 +941,192 @@ export async function insertImportBatchDb(batch: ImportBatchRecord): Promise<boo
   }
 }
 
+// ─── 10. DIRECT POSTGRESQL BULK BATCH IMPORT ────────────────────────────────
+export async function batchImportToPostgres(params: {
+  schoolId: string;
+  academicYearId: string;
+  sourceType: string;
+  fileName?: string;
+  students: Array<{
+    first_name: string;
+    last_name: string;
+    gender: "M" | "F";
+    birth_date?: string;
+    class_id?: string;
+    class_name?: string;
+    matricule?: string;
+    discount_amount?: number;
+    discount_reason?: string;
+    custom_tuition?: number;
+    parent_name?: string;
+    parent_phone?: string;
+    parent_relationship?: string;
+    parent_address?: string;
+  }>;
+  payments?: Array<{
+    student_matricule: string;
+    amount: number;
+    payment_method: string;
+    payment_date?: string;
+    transaction_ref?: string;
+    receipt_number?: string;
+    notes?: string;
+  }>;
+}): Promise<{
+  success: boolean;
+  importedStudentsCount: number;
+  importedPaymentsCount: number;
+  errorsCount: number;
+  errorMessages: string[];
+}> {
+  const client = sb();
+  if (!client) {
+    return {
+      success: false,
+      importedStudentsCount: 0,
+      importedPaymentsCount: 0,
+      errorsCount: params.students.length,
+      errorMessages: ["Client Supabase non initialisé."],
+    };
+  }
+
+  let importedStudentsCount = 0;
+  let importedPaymentsCount = 0;
+  let errorsCount = 0;
+  const errorMessages: string[] = [];
+  const matriculeToStudentIdMap = new Map<string, string>();
+
+  // 1. Process Students & Parents
+  for (const s of params.students) {
+    try {
+      let parentId: string | null = null;
+
+      // Insert Parent if provided
+      if (s.parent_name && s.parent_name.trim()) {
+        const { data: pData } = await client
+          .from("parents")
+          .insert({
+            school_id: params.schoolId,
+            full_name: s.parent_name.trim(),
+            phone_primary: s.parent_phone || "+228 90 00 00 00",
+            relationship: s.parent_relationship || "Parent",
+            address: s.parent_address || null,
+          })
+          .select("id")
+          .single();
+
+        if (pData?.id) parentId = pData.id;
+      }
+
+      // Generate matricule if missing
+      const finalMatricule = s.matricule?.trim() || `MAT-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+
+      // Insert Student
+      const { data: sData, error: sErr } = await client
+        .from("students")
+        .upsert(
+          {
+            school_id: params.schoolId,
+            academic_year_id: params.academicYearId,
+            class_id: s.class_id || null,
+            matricule: finalMatricule,
+            first_name: s.first_name.trim(),
+            last_name: s.last_name.trim(),
+            gender: s.gender || "M",
+            birth_date: s.birth_date || null,
+            discount_amount: s.discount_amount || 0,
+            discount_reason: s.discount_reason || null,
+            custom_tuition: s.custom_tuition || null,
+            is_active: true,
+          },
+          { onConflict: "school_id,academic_year_id,matricule" }
+        )
+        .select("id, matricule")
+        .single();
+
+      if (sErr || !sData) {
+        errorsCount++;
+        errorMessages.push(`Erreur insertion élève ${s.first_name} ${s.last_name}: ${sErr?.message || "Inconnue"}`);
+        continue;
+      }
+
+      matriculeToStudentIdMap.set(finalMatricule, sData.id);
+      importedStudentsCount++;
+
+      // Link Parent
+      if (parentId) {
+        try {
+          await client
+            .from("student_parents")
+            .upsert({
+              student_id: sData.id,
+              parent_id: parentId,
+              is_primary_contact: true,
+            }, { onConflict: "student_id,parent_id" });
+        } catch {}
+      }
+    } catch (e: any) {
+      errorsCount++;
+      errorMessages.push(`Exception sur élève ${s.first_name}: ${e?.message}`);
+    }
+  }
+
+  // 2. Process Payments if any
+  if (params.payments && params.payments.length > 0) {
+    for (const p of params.payments) {
+      try {
+        const studentId = matriculeToStudentIdMap.get(p.student_matricule);
+        if (!studentId) continue;
+
+        const receiptNum = p.receipt_number || `REC-${Date.now().toString().slice(-6)}`;
+        const { error: pErr } = await client.from("payments").insert({
+          school_id: params.schoolId,
+          academic_year_id: params.academicYearId,
+          student_id: studentId,
+          amount: p.amount,
+          allocated_amount: p.amount,
+          payment_method: p.payment_method || "cash",
+          transaction_ref: p.transaction_ref || null,
+          receipt_number: receiptNum,
+          notes: p.notes || "Import initial",
+          status: "completed",
+        });
+
+        if (!pErr) {
+          importedPaymentsCount++;
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Record in import_batches
+  try {
+    await client.from("import_batches").insert({
+      school_id: params.schoolId,
+      academic_year_id: params.academicYearId,
+      source_type: params.sourceType,
+      file_name: params.fileName || "Import Direct",
+      total_rows: params.students.length,
+      imported_students_count: importedStudentsCount,
+      imported_payments_count: importedPaymentsCount,
+      errors_count: errorsCount,
+      duplicates_count: 0,
+      payload_summary: {
+        success: true,
+        importedStudentsCount,
+        importedPaymentsCount,
+        errorsCount,
+      },
+    });
+  } catch {}
+
+  return {
+    success: errorsCount === 0 || importedStudentsCount > 0,
+    importedStudentsCount,
+    importedPaymentsCount,
+    errorsCount,
+    errorMessages,
+  };
+}
+
 export { isSupabaseConfigured };

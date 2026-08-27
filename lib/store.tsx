@@ -50,6 +50,7 @@ import {
   fetchTuitionPlans,
   fetchReminders,
   fetchPaymentMethodsDb,
+  fetchImportBatchesDb,
   upsertSchool,
   upsertAcademicYearDb,
   upsertClassDb,
@@ -63,6 +64,8 @@ import {
   deleteTuitionPlanDb,
   insertReminderDb,
   savePaymentMethodsDb,
+  insertImportBatchDb,
+  batchImportToPostgres,
   PaymentMethodConfig,
   getDefaultPaymentMethods,
 } from "./supabase/db";
@@ -98,10 +101,10 @@ export interface AuthUser {
   role?: string;
 }
 
-export type SyncStatus = "synced" | "syncing" | "offline" | "error" | "tables_missing";
+export type SyncStatus = "synced" | "syncing" | "offline" | "error";
 
 interface ScolyContextType {
-  // Data
+  // Data (Single Source of Truth: Supabase PostgreSQL)
   school: School;
   academicYear: AcademicYear;
   academicYearsList: AcademicYear[];
@@ -154,7 +157,7 @@ interface ScolyContextType {
   getStudentFinancialSummary: (studentId: string) => StudentFinancialSummary;
   dashboardMetrics: DashboardMetrics;
 
-  // Actions
+  // Actions (Direct PostgreSQL Operations)
   addPayment: (params: {
     student_id: string;
     amount: number;
@@ -232,24 +235,8 @@ interface ScolyContextType {
 
 const ScolyContext = createContext<ScolyContextType | undefined>(undefined);
 
-const STORAGE_KEYS = {
-  VERSION: "scoly_v7_prod_flag",
-  SCHOOL: "scoly_v7_school",
-  ACADEMIC_YEAR: "scoly_v7_academic_year",
-  ACADEMIC_YEARS_LIST: "scoly_v7_academic_years_list",
-  CLASSES: "scoly_v7_classes",
-  TUITION_PLANS: "scoly_v7_tuitions",
-  STUDENTS: "scoly_v7_students",
-  PAYMENTS: "scoly_v7_payments",
-  REMINDERS: "scoly_v7_reminders",
-  STAFF: "scoly_v7_staff",
-  IMPORT_BATCHES: "scoly_v7_import_batches",
-  AUDIT_LOGS: "scoly_v7_audit_logs",
-  PAYMENT_METHODS: "scoly_v7_payment_methods",
-  USER: "scoly_v7_user",
-};
-
 export function ScolyProvider({ children }: { children: React.ReactNode }) {
+  // Pure In-Memory React State backed exclusively by Supabase PostgreSQL
   const [school, setSchool] = useState<School>(INITIAL_SCHOOL);
   const [academicYear, setAcademicYear] = useState<AcademicYear>(INITIAL_ACADEMIC_YEAR);
   const [academicYearsList, setAcademicYearsList] = useState<AcademicYear[]>([INITIAL_ACADEMIC_YEAR]);
@@ -268,11 +255,12 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | undefined>();
   const isSyncingRef = useRef(false);
 
-  // ─── 1. FETCH ALL DATA LIVE FROM SUPABASE (MULTI-DEVICE CLOUD RESTORATION) ───
+  // ─── 1. FETCH ALL DATA LIVE DIRECTLY FROM SUPABASE POSTGRESQL ───────────────
   const fetchAllFromSupabase = useCallback(
     async (targetSchoolId?: string, targetUserId?: string, targetEmail?: string) => {
       if (!isSupabaseConfigured) {
         setSyncStatus("offline");
+        setIsLoaded(true);
         return false;
       }
 
@@ -281,7 +269,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       setSyncStatus("syncing");
 
       try {
-        // 1. Try server bootstrap API for instant cross-device hydration
+        // 1. Direct Server Bootstrap API (Fetches all relations in parallel from PostgreSQL)
         const res = await fetch("/api/sync/bootstrap", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -298,7 +286,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             setSchool(data.school);
             if (data.academicYear) {
               setAcademicYear(data.academicYear);
-              setAcademicYearsList([data.academicYear]);
+            }
+            if (Array.isArray(data.academicYearsList) && data.academicYearsList.length > 0) {
+              setAcademicYearsList(data.academicYearsList);
             }
             if (Array.isArray(data.classes)) {
               setClasses(data.classes);
@@ -318,9 +308,6 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(data.reminders)) {
               setReminders(data.reminders);
             }
-            if (Array.isArray(data.staffMembers) && data.staffMembers.length > 0) {
-              setStaffMembers(data.staffMembers);
-            }
             if (Array.isArray(data.importBatches)) {
               setImportBatches(data.importBatches);
             }
@@ -328,36 +315,22 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               setAuditLogs(data.auditLogs);
             }
 
-            // Immediately populate local device storage cache
-            if (typeof window !== "undefined") {
-              try {
-                localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(data.school));
-                if (data.academicYear) localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEAR, JSON.stringify(data.academicYear));
-                if (Array.isArray(data.classes)) localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(data.classes));
-                if (Array.isArray(data.students)) localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(data.students));
-                if (Array.isArray(data.payments)) localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(data.payments));
-                if (Array.isArray(data.tuitionPlans)) localStorage.setItem(STORAGE_KEYS.TUITION_PLANS, JSON.stringify(data.tuitionPlans));
-                if (Array.isArray(data.paymentMethods)) localStorage.setItem(STORAGE_KEYS.PAYMENT_METHODS, JSON.stringify(data.paymentMethods));
-              } catch (e) {
-                console.debug("Local storage cache write notice:", e);
-              }
-            }
-
             setSyncStatus("synced");
             setSyncErrorMessage(undefined);
             isSyncingRef.current = false;
+            setIsLoaded(true);
             return true;
           }
         }
 
-        // 2. Direct browser fallback via client
+        // 2. Direct Browser Supabase client query
         const sbSchool = await fetchSchool(targetSchoolId);
         if (sbSchool) {
           setSchool(sbSchool);
           const sbYear = await fetchAcademicYear(sbSchool.id);
           if (sbYear) {
             setAcademicYear(sbYear);
-            const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods] =
+            const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods, sbBatches] =
               await Promise.all([
                 fetchAcademicYearsList(sbSchool.id),
                 fetchClasses(sbSchool.id, sbYear.id),
@@ -366,6 +339,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
                 fetchTuitionPlans(sbSchool.id, sbYear.id),
                 fetchReminders(sbSchool.id),
                 fetchPaymentMethodsDb(sbSchool.id),
+                fetchImportBatchesDb(sbSchool.id),
               ]);
 
             if (sbYearsList.length > 0) setAcademicYearsList(sbYearsList);
@@ -375,225 +349,93 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             setTuitionPlans(sbPlans);
             setReminders(sbReminders);
             setPaymentMethods(sbMethods);
+            setImportBatches(sbBatches);
           }
           setSyncStatus("synced");
           setSyncErrorMessage(undefined);
           isSyncingRef.current = false;
+          setIsLoaded(true);
           return true;
         }
 
         setSyncStatus("synced");
         isSyncingRef.current = false;
+        setIsLoaded(true);
         return true;
       } catch (err: any) {
-        console.warn("[SCOLY] Supabase sync error:", err);
+        console.warn("[SCOLY] Supabase PostgreSQL sync error:", err);
         setSyncStatus("error");
         setSyncErrorMessage(err?.message || "Erreur de synchronisation Supabase");
         isSyncingRef.current = false;
+        setIsLoaded(true);
         return false;
       }
     },
     []
   );
 
-  // ─── 2. FAST LOCALSTORAGE MOUNT + AUTOMATIC SUPABASE SYNC ──────────────────
+  // ─── 2. AUTH SESSION LISTENER (CROSS-DEVICE CLOUD HYDRATION) ────────────────
   useEffect(() => {
-    function loadFromLocalStorage() {
-      try {
-        const isCleanVersion = localStorage.getItem(STORAGE_KEYS.VERSION);
-
-        if (!isCleanVersion || isCleanVersion !== "clean_v7") {
-          localStorage.setItem(STORAGE_KEYS.VERSION, "clean_v7");
-        } else {
-          const savedSchool = localStorage.getItem(STORAGE_KEYS.SCHOOL);
-          const savedAcademicYear = localStorage.getItem(STORAGE_KEYS.ACADEMIC_YEAR);
-          const savedAcademicYearsList = localStorage.getItem(STORAGE_KEYS.ACADEMIC_YEARS_LIST);
-          const savedClasses = localStorage.getItem(STORAGE_KEYS.CLASSES);
-          const savedTuitions = localStorage.getItem(STORAGE_KEYS.TUITION_PLANS);
-          const savedStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-          const savedPayments = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
-          const savedReminders = localStorage.getItem(STORAGE_KEYS.REMINDERS);
-          const savedStaff = localStorage.getItem(STORAGE_KEYS.STAFF);
-          const savedBatches = localStorage.getItem(STORAGE_KEYS.IMPORT_BATCHES);
-          const savedAudit = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
-          const savedMethods = localStorage.getItem(STORAGE_KEYS.PAYMENT_METHODS);
-          const savedUser = localStorage.getItem(STORAGE_KEYS.USER);
-
-          if (savedSchool) setSchool(JSON.parse(savedSchool));
-          if (savedAcademicYear) setAcademicYear(JSON.parse(savedAcademicYear));
-          if (savedAcademicYearsList) setAcademicYearsList(JSON.parse(savedAcademicYearsList));
-          if (savedClasses) setClasses(JSON.parse(savedClasses));
-          if (savedTuitions) setTuitionPlans(JSON.parse(savedTuitions));
-          if (savedStudents) setStudents(JSON.parse(savedStudents));
-          if (savedPayments) setPayments(JSON.parse(savedPayments));
-          if (savedReminders) setReminders(JSON.parse(savedReminders));
-          if (savedStaff) setStaffMembers(JSON.parse(savedStaff));
-          if (savedBatches) setImportBatches(JSON.parse(savedBatches));
-          if (savedAudit) setAuditLogs(JSON.parse(savedAudit));
-          if (savedMethods) setPaymentMethods(JSON.parse(savedMethods));
-          if (savedUser) setCurrentUser(JSON.parse(savedUser));
-        }
-      } catch (e) {
-        console.warn("Storage load error", e);
-      }
+    if (!isSupabaseConfigured) {
+      setIsLoaded(true);
+      return;
     }
 
-    loadFromLocalStorage();
-    setIsLoaded(true);
+    const client = getSupabaseBrowser();
+    if (!client) {
+      setIsLoaded(true);
+      return;
+    }
 
-    // Check auth session & sync live data across devices
-    if (isSupabaseConfigured) {
-      const client = getSupabaseBrowser();
-      if (client) {
-        client.auth.getSession().then(({ data: { session } }) => {
-          if (session?.user) {
-            const u: AuthUser = {
-              id: session.user.id,
-              email: session.user.email || "",
-              full_name: session.user.user_metadata?.full_name,
-              first_name: session.user.user_metadata?.first_name,
-              last_name: session.user.user_metadata?.last_name,
-              phone: session.user.user_metadata?.phone,
-            };
-            setCurrentUser(u);
-            fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
-          } else {
-            const savedUserStr = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.USER) : null;
-            if (savedUserStr) {
-              try {
-                const u = JSON.parse(savedUserStr);
-                setCurrentUser(u);
-                fetchAllFromSupabase(undefined, u.id, u.email);
-              } catch {
-                fetchAllFromSupabase();
-              }
-            } else {
-              fetchAllFromSupabase();
-            }
-          }
-        });
-
-        // Listen to auth changes (e.g. login from another tab/window/device)
-        const {
-          data: { subscription },
-        } = client.auth.onAuthStateChange((_event, session) => {
-          if (session?.user) {
-            const u: AuthUser = {
-              id: session.user.id,
-              email: session.user.email || "",
-              full_name: session.user.user_metadata?.full_name,
-              first_name: session.user.user_metadata?.first_name,
-              last_name: session.user.user_metadata?.last_name,
-              phone: session.user.user_metadata?.phone,
-            };
-            setCurrentUser(u);
-            fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
-          } else {
-            setCurrentUser(null);
-          }
-        });
-
-        return () => {
-          subscription.unsubscribe();
+    // 1. Initial Session Check
+    client.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const u: AuthUser = {
+          id: session.user.id,
+          email: session.user.email || "",
+          full_name: session.user.user_metadata?.full_name,
+          first_name: session.user.user_metadata?.first_name,
+          last_name: session.user.user_metadata?.last_name,
+          phone: session.user.user_metadata?.phone,
         };
+        setCurrentUser(u);
+        fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
+      } else {
+        fetchAllFromSupabase();
       }
-    }
+    });
+
+    // 2. Real-Time Auth State Changes (PC <-> Mobile login events)
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const u: AuthUser = {
+          id: session.user.id,
+          email: session.user.email || "",
+          full_name: session.user.user_metadata?.full_name,
+          first_name: session.user.user_metadata?.first_name,
+          last_name: session.user.user_metadata?.last_name,
+          phone: session.user.user_metadata?.phone,
+        };
+        setCurrentUser(u);
+        fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [fetchAllFromSupabase]);
 
-  // ─── 3. PERSIST LOCAL CACHE ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isLoaded) return;
-    try {
-      localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(school));
-      localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEAR, JSON.stringify(academicYear));
-      localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEARS_LIST, JSON.stringify(academicYearsList));
-      localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
-      localStorage.setItem(STORAGE_KEYS.TUITION_PLANS, JSON.stringify(tuitionPlans));
-      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-      localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(payments));
-      localStorage.setItem(STORAGE_KEYS.REMINDERS, JSON.stringify(reminders));
-      localStorage.setItem(STORAGE_KEYS.STAFF, JSON.stringify(staffMembers));
-      localStorage.setItem(STORAGE_KEYS.IMPORT_BATCHES, JSON.stringify(importBatches));
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
-      localStorage.setItem(STORAGE_KEYS.PAYMENT_METHODS, JSON.stringify(paymentMethods));
-      if (currentUser) {
-        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.USER);
-      }
-    } catch (e) {
-      console.warn("Storage save error", e);
-    }
-  }, [
-    school,
-    academicYear,
-    academicYearsList,
-    classes,
-    tuitionPlans,
-    students,
-    payments,
-    reminders,
-    staffMembers,
-    importBatches,
-    auditLogs,
-    paymentMethods,
-    currentUser,
-    isLoaded,
-  ]);
-
-  // ─── 3.5 AUTOMATIC SILENT BACKGROUND SYNC TO SUPABASE ──────────────────────
-  useEffect(() => {
-    if (!isLoaded || !isSupabaseConfigured) return;
-
-    const timer = setTimeout(() => {
-      fetch("/api/sync/save-all", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          school,
-          academicYear,
-          classes,
-          students,
-          payments,
-          tuitionPlans,
-          paymentMethods,
-        }),
-      }).catch((err) => {
-        console.debug("[SCOLY] Silent background sync:", err);
-      });
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [
-    isLoaded,
-    school,
-    academicYear,
-    classes,
-    students,
-    payments,
-    tuitionPlans,
-    paymentMethods,
-  ]);
-
-  // ─── 4. AUTHENTICATION & ONBOARDING HANDLERS ──────────────────────────────
+  // ─── 3. AUTHENTICATION & REGISTRATION HANDLERS ────────────────────────────
   const loginUser = useCallback(
     async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
       const client = getSupabaseBrowser();
       if (!client) {
-        // Fallback local login if client is not initialized
-        const u: AuthUser = {
-          id: "user-" + Date.now(),
-          email: email.trim(),
-          full_name: email.split("@")[0],
-          first_name: "Utilisateur",
-          last_name: "",
-        };
-        setCurrentUser(u);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-        }
-        await fetchAllFromSupabase(undefined, u.id, u.email).catch(() => {});
-        return { success: true };
+        return { success: false, error: "Client Supabase non initialisé." };
       }
 
       try {
@@ -603,22 +445,6 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (error) {
-          // If email is not confirmed, bypass check so user is never blocked
-          if (error.message.includes("Email not confirmed")) {
-            const u: AuthUser = {
-              id: "user-" + email.replace(/[^a-zA-Z0-9]/g, ""),
-              email: email.trim(),
-              full_name: email.split("@")[0],
-              first_name: "Utilisateur",
-              last_name: "",
-            };
-            setCurrentUser(u);
-            if (typeof window !== "undefined") {
-              localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-            }
-            await fetchAllFromSupabase(undefined, u.id, u.email).catch(() => {});
-            return { success: true };
-          }
           if (error.message.includes("Invalid login credentials")) {
             return { success: false, error: "Adresse email ou mot de passe incorrect." };
           }
@@ -635,10 +461,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             phone: data.user.user_metadata?.phone,
           };
           setCurrentUser(u);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-          }
-          // Fetch complete cloud data from Supabase for this user (restores computer data on phone)
+          // Restore complete cloud data from Supabase for this user immediately
           await fetchAllFromSupabase(undefined, data.user.id, data.user.email || email).catch(() => {});
           return { success: true };
         }
@@ -694,7 +517,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       const client = getSupabaseBrowser();
 
       try {
-        // 1. Create auto-confirmed user directly via server API (No confirmation email sent, Zero rate limits!)
+        // 1. Create auto-confirmed user directly via server API in PostgreSQL
         const apiRes = await fetch("/api/auth/register-school", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -715,7 +538,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           return { success: false, error: apiData.error };
         }
 
-        // 2. Client instant sign-in to establish session
+        // 2. Client instant sign-in
         if (client) {
           const signInRes = await client.auth.signInWithPassword({
             email: email.trim(),
@@ -731,79 +554,15 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               last_name: lastName,
               phone: phone,
             };
-            const newSchool: School = {
-              ...INITIAL_SCHOOL,
-              id: apiData.school_id || signInRes.data.user.id,
-              name: schoolName || `Établissement de ${firstName}`,
-              email: email.trim(),
-              phone: phone || INITIAL_SCHOOL.phone,
-              onboarding_completed: false,
-              onboarding_current_step: 1,
-            };
-            setSchool(newSchool);
             setCurrentUser(u);
-            if (typeof window !== "undefined") {
-              localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-              localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(newSchool));
-            }
-            await fetchAllFromSupabase(newSchool.id, signInRes.data.user.id).catch(() => {});
+            await fetchAllFromSupabase(apiData.school_id, signInRes.data.user.id, email).catch(() => {});
             return { success: true };
           }
         }
 
-        // 3. Resilient session setup (Instant continuation to Onboarding)
-        const resolvedUserId = apiData.user_id || "user-" + Date.now();
-        const u: AuthUser = {
-          id: resolvedUserId,
-          email: email.trim(),
-          full_name: fullName,
-          first_name: firstName,
-          last_name: lastName,
-          phone: phone,
-        };
-        const newSchool: School = {
-          ...INITIAL_SCHOOL,
-          id: apiData.school_id || "school-" + resolvedUserId,
-          name: schoolName || `Établissement de ${firstName}`,
-          email: email.trim(),
-          phone: phone || INITIAL_SCHOOL.phone,
-          onboarding_completed: false,
-          onboarding_current_step: 1,
-        };
-        setSchool(newSchool);
-        setCurrentUser(u);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-          localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(newSchool));
-        }
         return { success: true };
       } catch (err: any) {
-        // Fallback user session creation so the user is NEVER blocked
-        const localId = "user-" + Date.now();
-        const u: AuthUser = {
-          id: localId,
-          email: email.trim(),
-          full_name: fullName,
-          first_name: firstName,
-          last_name: lastName,
-          phone: phone,
-        };
-        const newSchool: School = {
-          ...INITIAL_SCHOOL,
-          id: "school-" + localId,
-          name: schoolName || `Établissement de ${firstName}`,
-          email: email.trim(),
-          phone: phone || INITIAL_SCHOOL.phone,
-          onboarding_completed: false,
-          onboarding_current_step: 1,
-        };
-        setSchool(newSchool);
-        setCurrentUser(u);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-          localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(newSchool));
-        }
-        return { success: true };
+        return { success: false, error: err?.message || "Erreur lors de la création du compte." };
       }
     },
     [fetchAllFromSupabase]
@@ -811,18 +570,14 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
     const client = getSupabaseBrowser();
-    if (!client) {
-      return { success: true };
-    }
+    if (!client) return { success: true };
 
     try {
       const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
       });
 
-      if (error) {
-        return { success: false, error: error.message };
-      }
+      if (error) return { success: false, error: error.message };
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err?.message || "Erreur lors de l'envoi." };
@@ -831,17 +586,11 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   const saveOnboardingStep = useCallback(
     async (step: number, data?: Partial<School>) => {
-      setSchool((prev) => {
-        const updated: School = {
-          ...prev,
-          ...(data || {}),
-          onboarding_current_step: step,
-        };
-        if (typeof window !== "undefined") {
-          localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(updated));
-        }
-        return updated;
-      });
+      setSchool((prev) => ({
+        ...prev,
+        ...(data || {}),
+        onboarding_current_step: step,
+      }));
 
       if (isSupabaseConfigured) {
         const payloadToSave: Partial<School> = {
@@ -850,14 +599,45 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           onboarding_current_step: step,
         };
         upsertSchool(payloadToSave).catch((err) => {
-          console.debug("[Onboarding] Autosave step background error:", err);
+          console.debug("[Onboarding] Autosave step error:", err);
         });
       }
     },
     [school.id]
   );
 
-  // ─── 5. PUSH ALL LOCAL DATA TO SUPABASE (MULTI-DEVICE CLOUD BACKUP) ───────
+  const completeOnboarding = useCallback(async () => {
+    const updated: School = {
+      ...school,
+      onboarding_completed: true,
+      onboarding_current_step: 9,
+    };
+    setSchool(updated);
+    if (isSupabaseConfigured) {
+      await upsertSchool(updated).catch(() => {});
+    }
+  }, [school]);
+
+  const logoutUser = useCallback(async () => {
+    const client = getSupabaseBrowser();
+    if (client) {
+      await client.auth.signOut().catch(() => {});
+    }
+    setCurrentUser(null);
+    setSchool(INITIAL_SCHOOL);
+    setClasses(INITIAL_CLASSES);
+    setTuitionPlans(INITIAL_TUITION_PLANS);
+    setStudents([]);
+    setPayments([]);
+    setReminders([]);
+    setImportBatches([]);
+    await fetchAllFromSupabase();
+  }, [fetchAllFromSupabase]);
+
+  const refreshFromSupabase = useCallback(async () => {
+    return await fetchAllFromSupabase(school.id, currentUser?.id, currentUser?.email);
+  }, [fetchAllFromSupabase, school.id, currentUser]);
+
   const syncLocalToSupabase = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
     setSyncStatus("syncing");
     try {
@@ -873,9 +653,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           tuitionPlans,
           paymentMethods,
           reminders,
-          staffMembers,
           importBatches,
-          auditLogs,
           user_id: currentUser?.id,
           email: currentUser?.email || school?.email,
         }),
@@ -905,71 +683,11 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     tuitionPlans,
     paymentMethods,
     reminders,
-    staffMembers,
     importBatches,
-    auditLogs,
     currentUser,
   ]);
 
-  // ─── 5.5 AUTOMATIC SILENT BACKGROUND SYNC ──────────────────────────────────
-  useEffect(() => {
-    if (!isLoaded || !isSupabaseConfigured) return;
-
-    const timer = setTimeout(() => {
-      syncLocalToSupabase().catch((err) => {
-        console.debug("[SCOLY] Silent background sync notice:", err);
-      });
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [
-    isLoaded,
-    school,
-    academicYear,
-    classes,
-    students,
-    payments,
-    tuitionPlans,
-    paymentMethods,
-    reminders,
-    staffMembers,
-    importBatches,
-    currentUser,
-    syncLocalToSupabase,
-  ]);
-
-  const completeOnboarding = useCallback(async () => {
-    const updated: School = {
-      ...school,
-      onboarding_completed: true,
-      onboarding_current_step: 9,
-    };
-    setSchool(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(updated));
-    }
-    if (isSupabaseConfigured) {
-      await upsertSchool(updated).catch(() => {});
-      await syncLocalToSupabase().catch(() => {});
-    }
-  }, [school, syncLocalToSupabase]);
-
-  const logoutUser = useCallback(async () => {
-    const client = getSupabaseBrowser();
-    if (client) {
-      await client.auth.signOut().catch(() => {});
-    }
-    setCurrentUser(null);
-    localStorage.removeItem(STORAGE_KEYS.USER);
-    // Reload public default data
-    await fetchAllFromSupabase();
-  }, [fetchAllFromSupabase]);
-
-  const refreshFromSupabase = useCallback(async () => {
-    return await fetchAllFromSupabase(school.id, currentUser?.id);
-  }, [fetchAllFromSupabase, school.id, currentUser?.id]);
-
-  // ─── 6. FINANCIAL CALCULATORS ──────────────────────────────────────────────
+  // ─── 4. FINANCIAL CALCULATORS ──────────────────────────────────────────────
   const getStudentFinancialSummary = useCallback(
     (studentId: string): StudentFinancialSummary => {
       const student = students.find((s) => s.id === studentId);
@@ -1002,19 +720,17 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       const discount_amount = student.discount_amount || 0;
       const total_due = net_tuition;
 
-      // Only count active (non-cancelled) payments
+      // Active payments strictly from Supabase
       const studentPayments = payments.filter(
         (p) => p.student_id === studentId && p.status !== "cancelled"
       );
       const total_paid = studentPayments.reduce((sum, p) => sum + Math.round(p.amount), 0);
 
-      // Allocation and Surplus / Advance
       const allocated_paid = Math.min(total_due, total_paid);
       const balance_due = Math.max(0, total_due - total_paid);
       const credit_amount = Math.max(0, total_paid - total_due);
       const has_advance = credit_amount > 0;
 
-      // Analyze status and installments
       let status: PaymentStatus = "up_to_date";
       let days_late = 0;
       let next_due_date: string | undefined;
@@ -1024,7 +740,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         status = "credit";
       } else if (balance_due <= 0) {
         status = "up_to_date";
-      } else if (plan && plan.installments.length > 0) {
+      } else if (plan && plan.installments && plan.installments.length > 0) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -1082,7 +798,6 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   const dashboardMetrics = useMemo((): DashboardMetrics => {
     const todayStr = new Date().toISOString().split("T")[0];
-
     const activePayments = payments.filter((p) => p.status !== "cancelled");
 
     const collected_today = activePayments
@@ -1154,7 +869,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const logAudit = useCallback(
     (action: string, entityType: string, entityId: string, payload: any) => {
       const newLog: AuditLogRecord = {
-        id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: crypto.randomUUID(),
         school_id: school.id,
         user_id: currentUser?.id || "user-current",
         user_name: currentUser?.full_name || "Direction",
@@ -1169,7 +884,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     [school.id, currentUser]
   );
 
-  // ─── 7. DATA MUTATION ACTIONS (WITH LIVE SUPABASE SYNC) ─────────────────────
+  // ─── 5. DATA MUTATION ACTIONS (DIRECT POSTGRESQL TRANSACTIONS) ───────────────
 
   // Action: Add Payment
   const addPayment = useCallback(
@@ -1210,7 +925,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       const receipt_number = `${school.receipt_prefix || "REC-25-"}${formattedCounter}`;
 
       const newPayment: Payment = {
-        id: `pay-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: crypto.randomUUID(),
         school_id: school.id,
         student_id: params.student_id,
         student_name: student ? `${student.first_name} ${student.last_name}` : "Élève",
@@ -1234,16 +949,29 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
       };
 
-      // Optimistic local state
+      // Optimistic update
       setPayments((prev) => [newPayment, ...prev]);
       setSchool((prev) => ({ ...prev, receipt_counter: counter }));
 
-      // Write directly to Supabase DB in background
-      insertPaymentDb(newPayment, school.id, academicYear.id).catch((err) => {
-        console.warn("[SCOLY] Background Supabase payment insert failed:", err);
+      // Direct write to Supabase PostgreSQL
+      insertPaymentDb(newPayment, school.id, academicYear.id).then((res) => {
+        if (res.success && res.data?.payment_id) {
+          setPayments((prev) =>
+            prev.map((p) =>
+              p.id === newPayment.id
+                ? {
+                    ...p,
+                    id: res.data.payment_id,
+                    receipt_number: res.data.receipt_number || p.receipt_number,
+                  }
+                : p
+            )
+          );
+        }
+      }).catch((err) => {
+        console.warn("[SCOLY] Supabase payment insert warning:", err);
       });
 
-      // Audit Log
       logAudit("RECORD_PAYMENT", "payment", newPayment.id, {
         student_id: params.student_id,
         student_name: newPayment.student_name,
@@ -1289,7 +1017,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         )
       );
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       cancelPaymentDb(paymentId, cleanReason, user).catch((err) => {
         console.warn("[SCOLY] Supabase cancel payment error:", err);
       });
@@ -1332,8 +1060,11 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       const matricule =
         params.matricule || `2025-${classCode}-${String(countInClass).padStart(3, "0")}`;
 
+      const studentId = crypto.randomUUID();
+      const parentId = crypto.randomUUID();
+
       const newStudent: Student = {
-        id: `stu-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: studentId,
         school_id: school.id,
         academic_year_id: academicYear.id,
         class_id: params.class_id,
@@ -1348,7 +1079,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         discount_reason: params.discount_reason,
         custom_tuition: params.custom_tuition,
         parent: {
-          id: `par-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: parentId,
           school_id: school.id,
           full_name: params.parent_name,
           relationship: params.parent_relationship,
@@ -1362,7 +1093,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
       setStudents((prev) => [newStudent, ...prev]);
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       insertStudentDb(newStudent, school.id, academicYear.id).catch((err) => {
         console.warn("[SCOLY] Supabase insert student error:", err);
       });
@@ -1379,7 +1110,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         prev.map((s) => (s.id === studentId ? { ...s, ...updates } : s))
       );
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       updateStudentDb(studentId, updates).catch((err) => {
         console.warn("[SCOLY] Supabase update student error:", err);
       });
@@ -1394,7 +1125,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       setPayments((prev) => prev.filter((p) => p.student_id !== studentId));
       setReminders((prev) => prev.filter((r) => r.student_id !== studentId));
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       deleteStudentDb(studentId).catch((err) => {
         console.warn("[SCOLY] Supabase delete student error:", err);
       });
@@ -1425,9 +1156,8 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Une classe nommée "${cleanName}" existe déjà.`);
       }
 
-      const classId = `cls-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
       const newClass: SchoolClass = {
-        id: classId,
+        id: crypto.randomUUID(),
         school_id: school.id,
         academic_year_id: academicYear.id,
         name: cleanName,
@@ -1442,7 +1172,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
       setClasses((prev) => [...prev, newClass]);
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       upsertClassDb(newClass).catch((err) => {
         console.warn("[SCOLY] Supabase add class error:", err);
       });
@@ -1495,7 +1225,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       upsertClassDb({ id, ...updates, ...(cleanName ? { name: cleanName } : {}) }).catch(
         (err) => {
           console.warn("[SCOLY] Supabase update class error:", err);
@@ -1525,7 +1255,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       setClasses((prev) => prev.filter((c) => c.id !== id));
       setTuitionPlans((prev) => prev.filter((tp) => tp.class_id !== id));
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       deleteClassDb(id).catch((err) => {
         console.warn("[SCOLY] Supabase delete class error:", err);
       });
@@ -1544,7 +1274,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     (updates: Partial<School>) => {
       setSchool((prev) => {
         const next = { ...prev, ...updates };
-        // Supabase direct write
+        // Direct write to Supabase PostgreSQL
         upsertSchool(next).catch((err) => {
           console.warn("[SCOLY] Supabase update school error:", err);
         });
@@ -1562,7 +1292,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         setAcademicYearsList((list) =>
           list.map((y) => (y.id === updated.id ? updated : y))
         );
-        // Supabase direct write
+        // Direct write to Supabase PostgreSQL
         upsertAcademicYearDb(updated).catch((err) => {
           console.warn("[SCOLY] Supabase update academic year error:", err);
         });
@@ -1650,7 +1380,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         return [...prev, sanitizedPlan];
       });
 
-      // Supabase direct write
+      // Direct write to Supabase PostgreSQL
       saveTuitionPlanDb(sanitizedPlan, school.id, academicYear.id).catch((err) => {
         console.warn("[SCOLY] Supabase save tuition plan error:", err);
       });
@@ -1687,7 +1417,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       permissions: StaffPermission;
     }): StaffMember => {
       const newStaff: StaffMember = {
-        id: `staff-${Date.now()}`,
+        id: crypto.randomUUID(),
         school_id: school.id,
         full_name: params.full_name,
         email: params.email,
@@ -1718,7 +1448,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     (reminderData: Omit<Reminder, "id" | "sent_at">): Reminder => {
       const newReminder: Reminder = {
         ...reminderData,
-        id: `rem-${Date.now()}`,
+        id: crypto.randomUUID(),
         sent_at: new Date().toISOString(),
       };
       setReminders((prev) => [newReminder, ...prev]);
@@ -1772,9 +1502,10 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   const recordImportBatch = useCallback((batch: ImportBatchRecord) => {
     setImportBatches((prev) => [batch, ...prev]);
+    insertImportBatchDb(batch).catch(() => {});
   }, []);
 
-  // ─── 8. PAYMENT METHODS CONFIG ─────────────────────────────
+  // ─── 6. PAYMENT METHODS CONFIG ─────────────────────────────
   const addPaymentMethod = useCallback(
     (label: string) => {
       const trimmed = label.trim();
@@ -1822,7 +1553,6 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   );
 
   const resetToDefaults = useCallback(() => {
-    localStorage.clear();
     setSchool(INITIAL_SCHOOL);
     setClasses(INITIAL_CLASSES);
     setTuitionPlans(INITIAL_TUITION_PLANS);

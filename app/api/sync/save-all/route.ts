@@ -18,11 +18,8 @@ export async function POST(req: NextRequest) {
       tuitionPlans,
       paymentMethods,
       reminders,
-      staffMembers,
       importBatches,
-      auditLogs,
       user_id,
-      email,
     } = body;
 
     if (!school?.id) {
@@ -30,89 +27,54 @@ export async function POST(req: NextRequest) {
     }
 
     const schoolId = school.id;
-    const resolvedEmail = email || school.email;
-    const sanitizedEmail = resolvedEmail ? resolvedEmail.replace(/[^a-zA-Z0-9_-]/g, "_") : null;
+    const yearId = academicYear?.id || crypto.randomUUID();
 
-    // ─── 1. SECURE FULL BACKUP TO SUPABASE STORAGE (MULTI-DEVICE INSTANT SYNC) ───
-    const fullData = {
-      school,
-      academicYear: academicYear || null,
-      classes: Array.isArray(classes) ? classes : [],
-      students: Array.isArray(students) ? students : [],
-      payments: Array.isArray(payments) ? payments : [],
-      tuitionPlans: Array.isArray(tuitionPlans) ? tuitionPlans : [],
-      paymentMethods: Array.isArray(paymentMethods) ? paymentMethods : [],
-      reminders: Array.isArray(reminders) ? reminders : [],
-      staffMembers: Array.isArray(staffMembers) ? staffMembers : [],
-      importBatches: Array.isArray(importBatches) ? importBatches : [],
-      auditLogs: Array.isArray(auditLogs) ? auditLogs : [],
-      user_id: user_id || null,
-      email: resolvedEmail || null,
+    // ─── 1. UPSERT SCHOOL (TENANT) ────────────────────────────────────────────
+    const { error: schoolErr } = await supabase.from("schools").upsert({
+      id: schoolId,
+      name: school.name || "Mon Établissement Scolaire",
+      code: school.code || "ECOLE-001",
+      slug: school.slug || "mon-ecole",
+      logo_url: school.logo_url || null,
+      phone: school.phone || "+228 90 00 00 00",
+      email: school.email || null,
+      address: school.address || "Quartier Administratif",
+      city: school.city || "Lomé",
+      country: school.country || "Togo",
+      currency: school.currency || "FCFA",
+      receipt_prefix: school.receipt_prefix || "REC-25-",
+      receipt_counter: Number(school.receipt_counter) || 0,
+      education_types: school.education_types || [],
+      onboarding_completed: school.onboarding_completed ?? true,
+      onboarding_current_step: school.onboarding_current_step ?? 9,
+      notification_preferences: school.notification_preferences || {},
       updated_at: new Date().toISOString(),
-    };
+    });
 
-    const fileBuffer = Buffer.from(JSON.stringify(fullData), "utf-8");
+    if (schoolErr) {
+      console.warn("[Save-All] School upsert notice:", schoolErr.message);
+    }
 
-    // Ensure bucket exists
-    try {
-      await supabase.storage.createBucket("scoly-data", { public: false }).catch(() => {});
-    } catch {}
-
-    // Upload under multiple fast lookup keys
-    const uploadPromises: Promise<any>[] = [
-      supabase.storage.from("scoly-data").upload(`schools/${schoolId}/data.json`, fileBuffer, {
-        contentType: "application/json",
-        upsert: true,
-      }),
-    ];
-
+    // ─── 2. LINK USER AS MEMBER (RBAC) ────────────────────────────────────────
     if (user_id) {
-      uploadPromises.push(
-        supabase.storage.from("scoly-data").upload(`schools/user_${user_id}/data.json`, fileBuffer, {
-          contentType: "application/json",
-          upsert: true,
-        })
-      );
+      try {
+        await supabase.from("school_members").upsert(
+          {
+            school_id: schoolId,
+            user_id: user_id,
+            role: "director",
+            first_name: school.name?.split(" ")[0] || "Direction",
+            last_name: "Admin",
+            is_active: true,
+          },
+          { onConflict: "school_id,user_id" }
+        );
+      } catch {}
     }
 
-    if (sanitizedEmail) {
-      uploadPromises.push(
-        supabase.storage.from("scoly-data").upload(`schools/email_${sanitizedEmail}/data.json`, fileBuffer, {
-          contentType: "application/json",
-          upsert: true,
-        })
-      );
-    }
-
-    await Promise.allSettled(uploadPromises);
-
-    // ─── 2. POSTGRES TABLES SYNC (IF TABLES CREATED) ──────────────────────────
-    try {
-      const yearId = academicYear?.id || "00000000-0000-0000-0000-000000000010";
-
-      // 2.1 Upsert School
-      await supabase.from("schools").upsert({
-        id: schoolId,
-        name: school.name || "Mon Établissement Scolaire",
-        code: school.code || "ECOLE-001",
-        slug: school.slug || "mon-ecole",
-        phone: school.phone || "+228 90 00 00 00",
-        email: school.email || null,
-        address: school.address || "Quartier Administratif",
-        city: school.city || "Lomé",
-        country: school.country || "Togo",
-        currency: school.currency || "FCFA",
-        receipt_prefix: school.receipt_prefix || "REC-25-",
-        receipt_counter: school.receipt_counter || 0,
-        education_types: school.education_types || [],
-        onboarding_completed: school.onboarding_completed ?? true,
-        onboarding_current_step: school.onboarding_current_step ?? 9,
-        notification_preferences: school.notification_preferences || {},
-        updated_at: new Date().toISOString(),
-      });
-
-      // 2.2 Upsert Academic Year
-      if (academicYear) {
+    // ─── 3. UPSERT ACADEMIC YEAR ──────────────────────────────────────────────
+    if (academicYear) {
+      try {
         await supabase.from("academic_years").upsert({
           id: yearId,
           school_id: schoolId,
@@ -121,31 +83,82 @@ export async function POST(req: NextRequest) {
           end_date: academicYear.end_date || "2026-06-30",
           is_current: true,
         });
-      }
+      } catch {}
+    }
 
-      // 2.3 Upsert Classes
-      if (classes && classes.length > 0) {
-        for (const cls of classes) {
+    // ─── 4. UPSERT CLASSES ───────────────────────────────────────────────────
+    if (Array.isArray(classes) && classes.length > 0) {
+      for (const cls of classes) {
+        try {
           await supabase.from("classes").upsert({
             id: cls.id,
             school_id: schoolId,
             academic_year_id: yearId,
             name: cls.name,
             level: cls.level || "Secondaire",
+            series: cls.series || null,
+            cycle_year: cls.cycle_year || null,
+            branch: cls.branch || null,
+            is_custom: cls.is_custom || false,
+            description: cls.description || null,
             order_index: cls.order_index || 0,
           });
-        }
+        } catch {}
       }
+    }
 
-      // 2.4 Upsert Students
-      if (students && students.length > 0) {
-        for (const s of students) {
-          await supabase.from("students").upsert({
+    // ─── 5. UPSERT PAYMENT METHODS CONFIG ─────────────────────────────────────
+    if (Array.isArray(paymentMethods) && paymentMethods.length > 0) {
+      try {
+        const methodsPayload = paymentMethods.map((m: any, idx: number) => ({
+          school_id: schoolId,
+          key: m.key,
+          label: m.label,
+          is_active: m.is_active !== false,
+          order_index: m.order_index ?? idx,
+        }));
+        await supabase
+          .from("payment_methods_config")
+          .upsert(methodsPayload, { onConflict: "school_id,key" });
+      } catch {}
+    }
+
+    // ─── 6. UPSERT STUDENTS & PARENTS ─────────────────────────────────────────
+    let studentsSaved = 0;
+    if (Array.isArray(students) && students.length > 0) {
+      for (const s of students) {
+        let parentId = s.parent?.id;
+
+        // Insert / Update Parent
+        if (s.parent && s.parent.full_name) {
+          try {
+            const { data: pData } = await supabase
+              .from("parents")
+              .upsert({
+                school_id: schoolId,
+                full_name: s.parent.full_name,
+                relationship: s.parent.relationship || "Parent",
+                phone_primary: s.parent.phone_primary || "+228 90 00 00 00",
+                phone_whatsapp: s.parent.phone_whatsapp || null,
+                email: s.parent.email || null,
+                profession: s.parent.profession || null,
+                address: s.parent.address || null,
+              })
+              .select("id")
+              .single();
+
+            if (pData?.id) parentId = pData.id;
+          } catch {}
+        }
+
+        // Insert / Update Student
+        try {
+          const { data: sData, error: sErr } = await supabase.from("students").upsert({
             id: s.id,
             school_id: schoolId,
             academic_year_id: yearId,
             class_id: s.class_id || null,
-            matricule: s.matricule,
+            matricule: s.matricule || `MAT-${s.id.slice(0, 6)}`,
             first_name: s.first_name,
             last_name: s.last_name,
             gender: s.gender || "M",
@@ -153,40 +166,93 @@ export async function POST(req: NextRequest) {
             is_active: s.is_active !== false,
             discount_amount: s.discount_amount || 0,
             discount_reason: s.discount_reason || null,
+            custom_tuition: s.custom_tuition || null,
             updated_at: new Date().toISOString(),
-          });
-        }
-      }
+          }).select("id").single();
 
-      // 2.5 Upsert Payments
-      if (payments && payments.length > 0) {
-        for (const p of payments) {
-          await supabase.from("payments").upsert({
+          if (!sErr && sData) {
+            studentsSaved++;
+            if (parentId) {
+              await supabase.from("student_parents").upsert({
+                student_id: sData.id,
+                parent_id: parentId,
+                is_primary_contact: true,
+              }, { onConflict: "student_id,parent_id" });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // ─── 7. UPSERT PAYMENTS ───────────────────────────────────────────────────
+    let paymentsSaved = 0;
+    if (Array.isArray(payments) && payments.length > 0) {
+      for (const p of payments) {
+        try {
+          const { error: pErr } = await supabase.from("payments").upsert({
             id: p.id,
             school_id: schoolId,
             academic_year_id: yearId,
             student_id: p.student_id,
-            receipt_number: p.receipt_number,
             amount: p.amount,
+            allocated_amount: p.allocated_amount || p.amount,
+            credit_amount: p.credit_amount || 0,
+            is_advance: p.is_advance || false,
             payment_method: p.payment_method || "cash",
-            payment_date: p.payment_date ? p.payment_date.split("T")[0] : new Date().toISOString().split("T")[0],
+            transaction_ref: p.transaction_ref || null,
+            receipt_number: p.receipt_number || "REC-25-00001",
+            notes: p.notes || null,
             status: p.status || "completed",
-            updated_at: new Date().toISOString(),
+            cancelled_at: p.cancelled_at || null,
+            cancellation_reason: p.cancellation_reason || null,
+            idempotency_key: p.idempotency_key || null,
           });
-        }
+
+          if (!pErr) paymentsSaved++;
+        } catch {}
       }
-    } catch (pgErr) {
-      console.debug("PostgreSQL table sync notice (Storage JSON holds ground truth):", pgErr);
+    }
+
+    // ─── 8. UPSERT TUITION PLANS ──────────────────────────────────────────────
+    if (Array.isArray(tuitionPlans) && tuitionPlans.length > 0) {
+      for (const tp of tuitionPlans) {
+        try {
+          const { data: planData } = await supabase
+            .from("tuition_plans")
+            .upsert({
+              id: tp.id,
+              school_id: schoolId,
+              academic_year_id: yearId,
+              class_id: tp.class_id,
+              total_amount: tp.total_amount,
+              description: tp.description || null,
+            })
+            .select("id")
+            .single();
+
+          if (planData?.id && Array.isArray(tp.installments) && tp.installments.length > 0) {
+            await supabase.from("tuition_installments").delete().eq("tuition_plan_id", planData.id);
+            const installmentsPayload = tp.installments.map((inst: any, idx: number) => ({
+              tuition_plan_id: planData.id,
+              title: inst.title,
+              due_date: inst.due_date,
+              amount: inst.amount,
+              installment_order: inst.installment_order || idx + 1,
+            }));
+            await supabase.from("tuition_installments").insert(installmentsPayload);
+          }
+        } catch {}
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: "Toutes vos données sont sauvegardées en temps réel dans le Cloud Supabase.",
-      studentsCount: Array.isArray(students) ? students.length : 0,
-      paymentsCount: Array.isArray(payments) ? payments.length : 0,
+      message: "Synchronisation PostgreSQL Supabase effectuée avec succès.",
+      studentsCount: studentsSaved,
+      paymentsCount: paymentsSaved,
     });
   } catch (err: any) {
-    console.error("Save-all exception:", err);
+    console.error("[Save-All] Exception:", err);
     return NextResponse.json({ error: err?.message || "Erreur serveur" }, { status: 500 });
   }
 }

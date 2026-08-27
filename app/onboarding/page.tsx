@@ -147,11 +147,8 @@ export default function OnboardingPage() {
       } else {
         // Step 9: Finalize onboarding
         await completeOnboarding();
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("scoly_welcome_toast", "true");
-        }
         startTransition(() => {
-          router.push("/");
+          router.push("/?welcome=true");
         });
       }
     } finally {
