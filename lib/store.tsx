@@ -266,111 +266,135 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("syncing");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | undefined>();
-
-  // Ref to prevent race condition during initial fetch
   const isSyncingRef = useRef(false);
 
-  // ─── 1. FETCH ALL DATA LIVE FROM SUPABASE ──────────────────────────────────
-  const fetchAllFromSupabase = useCallback(async (targetSchoolId?: string, targetUserId?: string) => {
-    if (!isSupabaseConfigured) {
-      setSyncStatus("offline");
-      return false;
-    }
+  // ─── 1. FETCH ALL DATA LIVE FROM SUPABASE (MULTI-DEVICE CLOUD RESTORATION) ───
+  const fetchAllFromSupabase = useCallback(
+    async (targetSchoolId?: string, targetUserId?: string, targetEmail?: string) => {
+      if (!isSupabaseConfigured) {
+        setSyncStatus("offline");
+        return false;
+      }
 
-    if (isSyncingRef.current) return false;
-    isSyncingRef.current = true;
-    setSyncStatus("syncing");
+      if (isSyncingRef.current) return false;
+      isSyncingRef.current = true;
+      setSyncStatus("syncing");
 
-    try {
-      // 1. Try server bootstrap API for maximum speed & bypass RLS
-      const res = await fetch("/api/sync/bootstrap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          school_id: targetSchoolId,
-          user_id: targetUserId,
-        }),
-      });
+      try {
+        // 1. Try server bootstrap API for instant cross-device hydration
+        const res = await fetch("/api/sync/bootstrap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            school_id: targetSchoolId,
+            user_id: targetUserId,
+            email: targetEmail,
+          }),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.school) {
-          setSchool(data.school);
-          if (data.academicYear) {
-            setAcademicYear(data.academicYear);
-            setAcademicYearsList([data.academicYear]);
-          }
-          if (Array.isArray(data.classes) && data.classes.length > 0) {
-            setClasses(data.classes);
-          }
-          if (Array.isArray(data.students)) {
-            setStudents(data.students);
-          }
-          if (Array.isArray(data.payments)) {
-            setPayments(data.payments);
-          }
-          if (Array.isArray(data.tuitionPlans)) {
-            setTuitionPlans(data.tuitionPlans);
-          }
-          if (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0) {
-            setPaymentMethods(data.paymentMethods);
-          }
-          if (Array.isArray(data.reminders)) {
-            setReminders(data.reminders);
-          }
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.school) {
+            setSchool(data.school);
+            if (data.academicYear) {
+              setAcademicYear(data.academicYear);
+              setAcademicYearsList([data.academicYear]);
+            }
+            if (Array.isArray(data.classes)) {
+              setClasses(data.classes);
+            }
+            if (Array.isArray(data.students)) {
+              setStudents(data.students);
+            }
+            if (Array.isArray(data.payments)) {
+              setPayments(data.payments);
+            }
+            if (Array.isArray(data.tuitionPlans)) {
+              setTuitionPlans(data.tuitionPlans);
+            }
+            if (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0) {
+              setPaymentMethods(data.paymentMethods);
+            }
+            if (Array.isArray(data.reminders)) {
+              setReminders(data.reminders);
+            }
+            if (Array.isArray(data.staffMembers) && data.staffMembers.length > 0) {
+              setStaffMembers(data.staffMembers);
+            }
+            if (Array.isArray(data.importBatches)) {
+              setImportBatches(data.importBatches);
+            }
+            if (Array.isArray(data.auditLogs)) {
+              setAuditLogs(data.auditLogs);
+            }
 
+            // Immediately populate local device storage cache
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem(STORAGE_KEYS.SCHOOL, JSON.stringify(data.school));
+                if (data.academicYear) localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEAR, JSON.stringify(data.academicYear));
+                if (Array.isArray(data.classes)) localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(data.classes));
+                if (Array.isArray(data.students)) localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(data.students));
+                if (Array.isArray(data.payments)) localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(data.payments));
+                if (Array.isArray(data.tuitionPlans)) localStorage.setItem(STORAGE_KEYS.TUITION_PLANS, JSON.stringify(data.tuitionPlans));
+                if (Array.isArray(data.paymentMethods)) localStorage.setItem(STORAGE_KEYS.PAYMENT_METHODS, JSON.stringify(data.paymentMethods));
+              } catch (e) {
+                console.debug("Local storage cache write notice:", e);
+              }
+            }
+
+            setSyncStatus("synced");
+            setSyncErrorMessage(undefined);
+            isSyncingRef.current = false;
+            return true;
+          }
+        }
+
+        // 2. Direct browser fallback via client
+        const sbSchool = await fetchSchool(targetSchoolId);
+        if (sbSchool) {
+          setSchool(sbSchool);
+          const sbYear = await fetchAcademicYear(sbSchool.id);
+          if (sbYear) {
+            setAcademicYear(sbYear);
+            const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods] =
+              await Promise.all([
+                fetchAcademicYearsList(sbSchool.id),
+                fetchClasses(sbSchool.id, sbYear.id),
+                fetchStudents(sbSchool.id, sbYear.id),
+                fetchPayments(sbSchool.id, sbYear.id),
+                fetchTuitionPlans(sbSchool.id, sbYear.id),
+                fetchReminders(sbSchool.id),
+                fetchPaymentMethodsDb(sbSchool.id),
+              ]);
+
+            if (sbYearsList.length > 0) setAcademicYearsList(sbYearsList);
+            if (sbClasses.length > 0) setClasses(sbClasses);
+            setStudents(sbStudents);
+            setPayments(sbPayments);
+            setTuitionPlans(sbPlans);
+            setReminders(sbReminders);
+            setPaymentMethods(sbMethods);
+          }
           setSyncStatus("synced");
           setSyncErrorMessage(undefined);
           isSyncingRef.current = false;
           return true;
         }
-      }
 
-      // 2. Direct browser fallback via client
-      const sbSchool = await fetchSchool(targetSchoolId);
-      if (sbSchool) {
-        setSchool(sbSchool);
-        const sbYear = await fetchAcademicYear(sbSchool.id);
-        if (sbYear) {
-          setAcademicYear(sbYear);
-          const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods] =
-            await Promise.all([
-              fetchAcademicYearsList(sbSchool.id),
-              fetchClasses(sbSchool.id, sbYear.id),
-              fetchStudents(sbSchool.id, sbYear.id),
-              fetchPayments(sbSchool.id, sbYear.id),
-              fetchTuitionPlans(sbSchool.id, sbYear.id),
-              fetchReminders(sbSchool.id),
-              fetchPaymentMethodsDb(sbSchool.id),
-            ]);
-
-          if (sbYearsList.length > 0) setAcademicYearsList(sbYearsList);
-          if (sbClasses.length > 0) setClasses(sbClasses);
-          setStudents(sbStudents);
-          setPayments(sbPayments);
-          setTuitionPlans(sbPlans);
-          setReminders(sbReminders);
-          setPaymentMethods(sbMethods);
-        }
         setSyncStatus("synced");
-        setSyncErrorMessage(undefined);
         isSyncingRef.current = false;
         return true;
-      } else {
-        // Tables missing or empty
-        setSyncStatus("tables_missing");
-        setSyncErrorMessage("Tables PostgreSQL non encore initialisées dans Supabase.");
+      } catch (err: any) {
+        console.warn("[SCOLY] Supabase sync error:", err);
+        setSyncStatus("error");
+        setSyncErrorMessage(err?.message || "Erreur de synchronisation Supabase");
         isSyncingRef.current = false;
         return false;
       }
-    } catch (err: any) {
-      console.warn("[SCOLY] Supabase sync error:", err);
-      setSyncStatus("error");
-      setSyncErrorMessage(err?.message || "Erreur de synchronisation Supabase");
-      isSyncingRef.current = false;
-      return false;
-    }
-  }, []);
+    },
+    []
+  );
 
   // ─── 2. FAST LOCALSTORAGE MOUNT + AUTOMATIC SUPABASE SYNC ──────────────────
   useEffect(() => {
@@ -417,7 +441,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     loadFromLocalStorage();
     setIsLoaded(true);
 
-    // Check auth session & sync live data
+    // Check auth session & sync live data across devices
     if (isSupabaseConfigured) {
       const client = getSupabaseBrowser();
       if (client) {
@@ -432,13 +456,24 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               phone: session.user.user_metadata?.phone,
             };
             setCurrentUser(u);
-            fetchAllFromSupabase(undefined, session.user.id);
+            fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
           } else {
-            fetchAllFromSupabase();
+            const savedUserStr = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.USER) : null;
+            if (savedUserStr) {
+              try {
+                const u = JSON.parse(savedUserStr);
+                setCurrentUser(u);
+                fetchAllFromSupabase(undefined, u.id, u.email);
+              } catch {
+                fetchAllFromSupabase();
+              }
+            } else {
+              fetchAllFromSupabase();
+            }
           }
         });
 
-        // Listen to auth changes (e.g. login from another tab/window)
+        // Listen to auth changes (e.g. login from another tab/window/device)
         const {
           data: { subscription },
         } = client.auth.onAuthStateChange((_event, session) => {
@@ -452,7 +487,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               phone: session.user.user_metadata?.phone,
             };
             setCurrentUser(u);
-            fetchAllFromSupabase(undefined, session.user.id);
+            fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
           } else {
             setCurrentUser(null);
           }
@@ -557,6 +592,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== "undefined") {
           localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
         }
+        await fetchAllFromSupabase(undefined, u.id, u.email).catch(() => {});
         return { success: true };
       }
 
@@ -580,6 +616,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             if (typeof window !== "undefined") {
               localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
             }
+            await fetchAllFromSupabase(undefined, u.id, u.email).catch(() => {});
             return { success: true };
           }
           if (error.message.includes("Invalid login credentials")) {
@@ -591,7 +628,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         if (data.user) {
           const u: AuthUser = {
             id: data.user.id,
-            email: data.user.email || "",
+            email: data.user.email || email,
             full_name: data.user.user_metadata?.full_name,
             first_name: data.user.user_metadata?.first_name,
             last_name: data.user.user_metadata?.last_name,
@@ -601,7 +638,8 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           if (typeof window !== "undefined") {
             localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
           }
-          await fetchAllFromSupabase(undefined, data.user.id).catch(() => {});
+          // Fetch complete cloud data from Supabase for this user (restores computer data on phone)
+          await fetchAllFromSupabase(undefined, data.user.id, data.user.email || email).catch(() => {});
           return { success: true };
         }
         return { success: false, error: "Connexion échouée." };
@@ -819,7 +857,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     [school.id]
   );
 
-  // ─── 5. PUSH ALL LOCAL DATA TO SUPABASE (ONE-CLICK MANUAL SYNC) ───────────
+  // ─── 5. PUSH ALL LOCAL DATA TO SUPABASE (MULTI-DEVICE CLOUD BACKUP) ───────
   const syncLocalToSupabase = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
     setSyncStatus("syncing");
     try {
@@ -834,6 +872,12 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           payments,
           tuitionPlans,
           paymentMethods,
+          reminders,
+          staffMembers,
+          importBatches,
+          auditLogs,
+          user_id: currentUser?.id,
+          email: currentUser?.email || school?.email,
         }),
       });
 
@@ -852,7 +896,47 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       setSyncErrorMessage(err?.message || "Erreur de communication avec le serveur.");
       return { success: false, message: err?.message };
     }
-  }, [school, academicYear, classes, students, payments, tuitionPlans, paymentMethods]);
+  }, [
+    school,
+    academicYear,
+    classes,
+    students,
+    payments,
+    tuitionPlans,
+    paymentMethods,
+    reminders,
+    staffMembers,
+    importBatches,
+    auditLogs,
+    currentUser,
+  ]);
+
+  // ─── 5.5 AUTOMATIC SILENT BACKGROUND SYNC ──────────────────────────────────
+  useEffect(() => {
+    if (!isLoaded || !isSupabaseConfigured) return;
+
+    const timer = setTimeout(() => {
+      syncLocalToSupabase().catch((err) => {
+        console.debug("[SCOLY] Silent background sync notice:", err);
+      });
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [
+    isLoaded,
+    school,
+    academicYear,
+    classes,
+    students,
+    payments,
+    tuitionPlans,
+    paymentMethods,
+    reminders,
+    staffMembers,
+    importBatches,
+    currentUser,
+    syncLocalToSupabase,
+  ]);
 
   const completeOnboarding = useCallback(async () => {
     const updated: School = {

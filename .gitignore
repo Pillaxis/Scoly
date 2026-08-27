@@ -40,6 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# temp & scratch
+supabase/.temp/
+scratch/
+
 # scoly dev
 /scratch
 .agents/

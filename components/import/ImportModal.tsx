@@ -57,6 +57,7 @@ export function ImportModal({ isOpen, onClose, initialSource = "excel" }: Import
     addPayment,
     logAudit,
     recordImportBatch,
+    syncLocalToSupabase,
   } = useScoly();
 
   // Wizard state
@@ -175,6 +176,7 @@ export function ImportModal({ isOpen, onClose, initialSource = "excel" }: Import
 
       setImportSummary(summary);
       setCurrentStep("SUMMARY");
+      syncLocalToSupabase().catch((err) => console.debug("Cloud sync post-import notice:", err));
     } catch (err: any) {
       console.error("Batch import error:", err);
       alert(`Erreur lors de l'importation par lots : ${err.message || "Erreur inconnue"}`);
