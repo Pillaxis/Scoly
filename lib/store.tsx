@@ -482,6 +482,40 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     isLoaded,
   ]);
 
+  // ─── 3.5 AUTOMATIC SILENT BACKGROUND SYNC TO SUPABASE ──────────────────────
+  useEffect(() => {
+    if (!isLoaded || !isSupabaseConfigured) return;
+
+    const timer = setTimeout(() => {
+      fetch("/api/sync/save-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          school,
+          academicYear,
+          classes,
+          students,
+          payments,
+          tuitionPlans,
+          paymentMethods,
+        }),
+      }).catch((err) => {
+        console.debug("[SCOLY] Silent background sync:", err);
+      });
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [
+    isLoaded,
+    school,
+    academicYear,
+    classes,
+    students,
+    payments,
+    tuitionPlans,
+    paymentMethods,
+  ]);
+
   // ─── 4. AUTHENTICATION HANDLERS ────────────────────────────────────────────
   const loginUser = useCallback(
     async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {

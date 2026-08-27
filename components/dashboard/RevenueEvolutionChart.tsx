@@ -13,6 +13,7 @@ interface ChartDataPoint {
   shortLabel: string;
   collected: number;
   unpaid: number;
+  isCurrent?: boolean;
 }
 
 export function RevenueEvolutionChart() {
@@ -20,11 +21,17 @@ export function RevenueEvolutionChart() {
   const [period, setPeriod] = useState<PeriodFilter>("monthly");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
+  // Current month key (e.g. "08" for August)
+  const currentMonthKey = useMemo(() => {
+    const d = new Date();
+    return String(d.getMonth() + 1).padStart(2, "0");
+  }, []);
+
   // Compute academic year months and data
   const chartData = useMemo((): ChartDataPoint[] => {
     const activePayments = payments.filter((p) => p.status !== "cancelled");
 
-    // Standard West African academic year months (Sept -> Juin)
+    // Standard complete 12-month academic cycle (Septembre -> Août)
     const schoolMonths = [
       { key: "09", name: "Septembre", short: "Sept." },
       { key: "10", name: "Octobre", short: "Oct." },
@@ -36,10 +43,14 @@ export function RevenueEvolutionChart() {
       { key: "04", name: "Avril", short: "Avr." },
       { key: "05", name: "Mai", short: "Mai" },
       { key: "06", name: "Juin", short: "Juin" },
+      { key: "07", name: "Juillet", short: "Juil." },
+      { key: "08", name: "Août", short: "Août" },
     ];
 
     if (period === "monthly") {
       return schoolMonths.map((m) => {
+        const isCurrent = m.key === currentMonthKey;
+
         // Payments collected in this month
         const collected = activePayments
           .filter((p) => {
@@ -69,10 +80,11 @@ export function RevenueEvolutionChart() {
 
         return {
           key: m.key,
-          label: m.name,
+          label: isCurrent ? `${m.name} (En cours)` : m.name,
           shortLabel: m.short,
           collected,
           unpaid,
+          isCurrent,
         };
       });
     }
@@ -82,10 +94,11 @@ export function RevenueEvolutionChart() {
         { key: "T1", label: "1er Trimestre (Sept - Nov)", shortLabel: "Trim. 1", months: ["09", "10", "11"] },
         { key: "T2", label: "2ème Trimestre (Déc - Fév)", shortLabel: "Trim. 2", months: ["12", "01", "02"] },
         { key: "T3", label: "3ème Trimestre (Mars - Mai)", shortLabel: "Trim. 3", months: ["03", "04", "05"] },
-        { key: "T4", label: "Clôture Scolaire (Juin)", shortLabel: "Clôture", months: ["06"] },
+        { key: "T4", label: "Clôture & Vacances (Juin - Août)", shortLabel: "Clôture", months: ["06", "07", "08"] },
       ];
 
       return quarters.map((q) => {
+        const isCurrent = q.months.includes(currentMonthKey);
         const collected = activePayments
           .filter((p) => {
             if (!p.payment_date) return false;
@@ -113,10 +126,11 @@ export function RevenueEvolutionChart() {
 
         return {
           key: q.key,
-          label: q.label,
+          label: isCurrent ? `${q.label} (En cours)` : q.label,
           shortLabel: q.shortLabel,
           collected,
           unpaid,
+          isCurrent,
         };
       });
     }
@@ -140,9 +154,10 @@ export function RevenueEvolutionChart() {
         shortLabel: academicYear.name,
         collected: totalCollected,
         unpaid: totalUnpaid,
+        isCurrent: true,
       },
     ];
-  }, [payments, students, tuitionPlans, academicYear, period]);
+  }, [payments, students, tuitionPlans, academicYear, period, currentMonthKey]);
 
   // Max value for scaling
   const maxVal = useMemo(() => {
@@ -236,7 +251,7 @@ export function RevenueEvolutionChart() {
   const activePoint = hoveredIndex !== null && chartData[hoveredIndex] ? chartData[hoveredIndex] : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-2xs flex flex-col justify-between">
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-2xs flex flex-col justify-between h-full">
       {/* Header with Title & Period Filter Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
         <div>
@@ -304,9 +319,9 @@ export function RevenueEvolutionChart() {
         </div>
       </div>
 
-      {/* Legend & Summary Values */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 pb-1 text-xs">
-        <div className="flex items-center gap-4">
+      {/* Legend & Summary Values - Fixed height to avoid any layout shifts */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 pb-1 text-xs min-h-[36px]">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full bg-blue-600 inline-block shadow-2xs" />
             <span className="font-bold text-slate-700">Encaissements :</span>
@@ -324,13 +339,22 @@ export function RevenueEvolutionChart() {
           </div>
         </div>
 
-        {activePoint && (
-          <div className="px-2.5 py-1 bg-slate-900 text-white rounded-lg text-[11px] font-bold animate-in fade-in flex items-center gap-2">
-            <span>{activePoint.label}</span>
-            <span className="text-blue-300 font-mono">+{formatFCFA(activePoint.collected)}</span>
-            <span className="text-rose-300 font-mono">/ {formatFCFA(activePoint.unpaid)}</span>
+        {/* Stable reserved slot for active point info without pushing layout */}
+        <div className="h-6 flex items-center shrink-0">
+          <div
+            className={`px-2.5 py-0.5 bg-slate-900 text-white rounded-lg text-[11px] font-bold flex items-center gap-2 transition-opacity duration-150 ${
+              activePoint ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+          >
+            <span>{activePoint ? activePoint.label : "—"}</span>
+            <span className="text-blue-300 font-mono">
+              +{formatFCFA(activePoint ? activePoint.collected : 0)}
+            </span>
+            <span className="text-rose-300 font-mono">
+              / {formatFCFA(activePoint ? activePoint.unpaid : 0)}
+            </span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Responsive SVG Curve Chart */}
@@ -338,6 +362,7 @@ export function RevenueEvolutionChart() {
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="w-full h-48 sm:h-56 select-none"
+          onMouseLeave={() => setHoveredIndex(null)}
         >
           <defs>
             {/* Gradient for Collected */}
@@ -424,25 +449,78 @@ export function RevenueEvolutionChart() {
               stroke="#94a3b8"
               strokeWidth="1.5"
               strokeDasharray="2 2"
+              className="pointer-events-none"
             />
           )}
+
+          {/* Subtle guide line for current month */}
+          {period === "monthly" &&
+            pointsCollected.map((pt, i) => {
+              if (!pt.data.isCurrent) return null;
+              return (
+                <line
+                  key={`guide-${i}`}
+                  x1={pt.x}
+                  y1={paddingTop}
+                  x2={pt.x}
+                  y2={paddingTop + innerHeight}
+                  stroke="#3b82f6"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                  strokeOpacity="0.3"
+                  className="pointer-events-none"
+                />
+              );
+            })}
 
           {/* Points & Hover Target Areas */}
           {pointsCollected.map((pt, index) => {
             const isHovered = hoveredIndex === index;
             const ptUnpaid = pointsUnpaid[index];
+            const isCurrent = Boolean(pt.data.isCurrent);
+
+            // Compute contiguous hitboxes without gaps
+            const totalPoints = chartData.length;
+            let rectX = paddingLeft;
+            let rectWidth = innerWidth;
+
+            if (totalPoints > 1) {
+              const prevX = index > 0 ? (pointsCollected[index - 1].x + pt.x) / 2 : 0;
+              const nextX =
+                index < totalPoints - 1 ? (pt.x + pointsCollected[index + 1].x) / 2 : svgWidth;
+              rectX = prevX;
+              rectWidth = nextX - prevX;
+            } else {
+              rectX = 0;
+              rectWidth = svgWidth;
+            }
 
             return (
               <g key={index}>
+                {/* Subtle halo ring for current month point */}
+                {isCurrent && !isHovered && (
+                  <circle
+                    cx={pt.x}
+                    cy={pt.y}
+                    r="7.5"
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="1"
+                    strokeDasharray="2 2"
+                    strokeOpacity="0.45"
+                    className="pointer-events-none"
+                  />
+                )}
+
                 {/* Collected Point Circle */}
                 <circle
                   cx={pt.x}
                   cy={pt.y}
-                  r={isHovered ? "6" : "3.5"}
+                  r={isHovered ? "5.5" : isCurrent ? "4" : "3.5"}
                   fill="#ffffff"
                   stroke="#2563eb"
-                  strokeWidth={isHovered ? "3" : "2"}
-                  className="transition-all duration-150"
+                  strokeWidth={isHovered ? "2.5" : isCurrent ? "2.5" : "2"}
+                  className="transition-all duration-100"
                 />
 
                 {/* Unpaid Point Circle */}
@@ -450,36 +528,63 @@ export function RevenueEvolutionChart() {
                   <circle
                     cx={ptUnpaid.x}
                     cy={ptUnpaid.y}
-                    r={isHovered ? "5" : "2.5"}
+                    r={isHovered ? "4.5" : "2.5"}
                     fill="#ffffff"
                     stroke="#f43f5e"
                     strokeWidth="2"
-                    className="transition-all duration-150"
+                    className="transition-all duration-100"
+                  />
+                )}
+
+                {/* Discreet highlight pill for current month label */}
+                {isCurrent && (
+                  <rect
+                    x={pt.x - 17}
+                    y={paddingTop + innerHeight + 6}
+                    width="34"
+                    height="16"
+                    rx="8"
+                    fill="#eff6ff"
+                    stroke="#bfdbfe"
+                    strokeWidth="1"
                   />
                 )}
 
                 {/* X Axis Labels */}
                 <text
                   x={pt.x}
-                  y={paddingTop + innerHeight + 18}
+                  y={paddingTop + innerHeight + 17.5}
                   textAnchor="middle"
-                  className={`text-[10px] select-none ${
-                    isHovered ? "fill-blue-700 font-extrabold" : "fill-slate-500 font-medium"
+                  className={`text-[9.5px] select-none transition-colors duration-100 ${
+                    isHovered
+                      ? "fill-blue-700 font-extrabold"
+                      : isCurrent
+                      ? "fill-blue-700 font-bold"
+                      : "fill-slate-400 font-medium"
                   }`}
                 >
                   {pt.data.shortLabel}
                 </text>
 
-                {/* Invisible Hover overlay rectangle */}
+                {/* Tiny discreet dot under current month */}
+                {isCurrent && (
+                  <circle
+                    cx={pt.x}
+                    cy={paddingTop + innerHeight + 26}
+                    r="1.5"
+                    fill="#2563eb"
+                  />
+                )}
+
+                {/* Seamless Hover hitbox */}
                 <rect
-                  x={pt.x - innerWidth / (chartData.length * 2 || 1)}
-                  y={paddingTop}
-                  width={innerWidth / (chartData.length || 1)}
-                  height={innerHeight + 25}
+                  x={rectX}
+                  y={0}
+                  width={rectWidth}
+                  height={svgHeight}
                   fill="transparent"
                   className="cursor-pointer"
                   onMouseEnter={() => setHoveredIndex(index)}
-                  onMouseLeave={() => setHoveredIndex(null)}
                 />
               </g>
             );
@@ -489,24 +594,29 @@ export function RevenueEvolutionChart() {
         {/* Hover Tooltip Floating Card */}
         {hoveredIndex !== null && pointsCollected[hoveredIndex] && (
           <div
-            className="absolute top-2 z-10 pointer-events-none bg-slate-900/95 text-white p-3 rounded-xl shadow-xl text-xs space-y-1 backdrop-blur-xs border border-slate-700 min-w-[170px]"
+            className="absolute top-2 z-10 pointer-events-none bg-slate-900/95 text-white p-2.5 px-3 rounded-xl shadow-xl text-xs space-y-1 backdrop-blur-xs border border-slate-700 min-w-[160px] transition-[left] duration-100 ease-out"
             style={{
               left: `${Math.min(
-                Math.max(10, (pointsCollected[hoveredIndex].x / svgWidth) * 100 - 15),
-                70
+                Math.max(14, (pointsCollected[hoveredIndex].x / svgWidth) * 100),
+                86
               )}%`,
+              transform: "translateX(-50%)",
             }}
           >
-            <p className="font-extrabold text-slate-200 border-b border-slate-700 pb-1">
+            <p className="font-extrabold text-slate-200 border-b border-slate-700/80 pb-1 text-[11px]">
               {chartData[hoveredIndex].label}
             </p>
-            <div className="flex items-center justify-between text-blue-300 pt-0.5">
+            <div className="flex items-center justify-between text-blue-300 pt-0.5 text-[11px]">
               <span>Encaissements :</span>
-              <strong className="font-mono">{formatFCFA(chartData[hoveredIndex].collected)}</strong>
+              <strong className="font-mono font-bold">
+                {formatFCFA(chartData[hoveredIndex].collected)}
+              </strong>
             </div>
-            <div className="flex items-center justify-between text-rose-300">
+            <div className="flex items-center justify-between text-rose-300 text-[11px]">
               <span>Impayés :</span>
-              <strong className="font-mono">{formatFCFA(chartData[hoveredIndex].unpaid)}</strong>
+              <strong className="font-mono font-bold">
+                {formatFCFA(chartData[hoveredIndex].unpaid)}
+              </strong>
             </div>
           </div>
         )}
