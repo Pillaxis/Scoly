@@ -1,5 +1,8 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+const DEFAULT_SUPABASE_URL = "https://plwzzbtwovoxbaocijnz.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_jgH10PehN1XwT8FNPv06ag_M3gvrmQS";
+
 function resolveSupabaseUrl(rawUrl: string): string {
   if (!rawUrl) return "";
   const trimmed = rawUrl.trim();
@@ -18,9 +21,9 @@ function resolveSupabaseUrl(rawUrl: string): string {
   return "";
 }
 
-const rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-export const cleanSupabaseUrl = resolveSupabaseUrl(rawUrlClean(rawSupabaseUrl));
-const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+const rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+export const cleanSupabaseUrl = resolveSupabaseUrl(rawUrlClean(rawSupabaseUrl)) || DEFAULT_SUPABASE_URL;
+const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
 
 function rawUrlClean(val: string): string {
   return val ? val.trim() : "";
