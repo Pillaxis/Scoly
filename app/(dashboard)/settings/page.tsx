@@ -24,6 +24,7 @@ import {
 import { StaffMember, SchoolClass, Student } from "@/types/scoly";
 import { StaffModal } from "@/components/settings/StaffModal";
 import { ClassModal } from "@/components/classes/ClassModal";
+import { DatabaseStatusCard } from "@/components/settings/DatabaseStatusCard";
 import { useScoly } from "@/lib/store";
 
 export default function SettingsPage() {
@@ -192,6 +193,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
+        {/* Section Base de Données & Supabase Live Status */}
+        <DatabaseStatusCard />
+
         {/* Formulaire de Coordonnées & Reçus */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -19,8 +19,12 @@ function resolveSupabaseUrl(rawUrl: string): string {
 }
 
 const rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-export const cleanSupabaseUrl = resolveSupabaseUrl(rawSupabaseUrl);
+export const cleanSupabaseUrl = resolveSupabaseUrl(rawUrlClean(rawSupabaseUrl));
 const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+
+function rawUrlClean(val: string): string {
+  return val ? val.trim() : "";
+}
 
 /**
  * Returns true only if Supabase environment variables are properly configured.
@@ -35,16 +39,16 @@ export const isSupabaseConfigured =
 let _supabase: SupabaseClient | null = null;
 
 /**
- * Singleton Supabase browser client.
- * Returns null if Supabase is not configured.
+ * Singleton Supabase browser client with multi-device persistent session.
  */
 export function getSupabaseBrowser(): SupabaseClient | null {
   if (!isSupabaseConfigured) return null;
   if (!_supabase) {
     _supabase = createClient(cleanSupabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
       },
     });
   }
@@ -55,3 +59,53 @@ export function getSupabaseBrowser(): SupabaseClient | null {
 export const supabase = isSupabaseConfigured
   ? getSupabaseBrowser()!
   : (null as unknown as SupabaseClient);
+
+/**
+ * Check if the remote database tables are created.
+ */
+export async function checkSupabaseTablesStatus(): Promise<{
+  connected: boolean;
+  tablesExist: boolean;
+  userCount: number;
+  schoolCount: number;
+  errorMessage?: string;
+}> {
+  const client = getSupabaseBrowser();
+  if (!client) {
+    return {
+      connected: false,
+      tablesExist: false,
+      userCount: 0,
+      schoolCount: 0,
+      errorMessage: "Supabase client not configured",
+    };
+  }
+
+  try {
+    const { data, error } = await client.from("schools").select("id, name").limit(1);
+    if (error) {
+      return {
+        connected: true,
+        tablesExist: false,
+        userCount: 0,
+        schoolCount: 0,
+        errorMessage: error.message,
+      };
+    }
+
+    return {
+      connected: true,
+      tablesExist: true,
+      userCount: 0,
+      schoolCount: data ? data.length : 0,
+    };
+  } catch (err: any) {
+    return {
+      connected: false,
+      tablesExist: false,
+      userCount: 0,
+      schoolCount: 0,
+      errorMessage: err?.message || "Unknown connection error",
+    };
+  }
+}

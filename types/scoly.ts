@@ -167,8 +167,10 @@ export interface StudentFinancialSummary {
 
 export interface Reminder {
   id: string;
+  school_id?: string;
   student_id: string;
   student_name: string;
+  parent_id?: string;
   parent_name: string;
   parent_phone: string;
   channel: 'whatsapp' | 'sms' | 'phone_call' | 'email';
