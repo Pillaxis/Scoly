@@ -245,12 +245,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ─── 9. UPSERT NOTIFICATIONS ─────────────────────────────────────────────
+    const notifications = body.notifications;
+    if (Array.isArray(notifications) && notifications.length > 0) {
+      for (const n of notifications) {
+        try {
+          await supabase.from("notifications").upsert({
+            id: n.id,
+            school_id: schoolId,
+            user_id: n.user_id || null,
+            target_roles: n.target_roles || [],
+            type: n.type,
+            priority: n.priority || "info",
+            title: n.title,
+            message: n.message,
+            action_url: n.action_url || null,
+            action_label: n.action_label || null,
+            entity_type: n.entity_type || null,
+            entity_id: n.entity_id || null,
+            metadata: n.metadata || {},
+            is_read: Boolean(n.is_read),
+            read_at: n.read_at || null,
+            dedup_key: n.dedup_key || null,
+            created_at: n.created_at || new Date().toISOString(),
+          });
+        } catch {}
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: "Synchronisation PostgreSQL Supabase effectuée avec succès.",
       studentsCount: studentsSaved,
       paymentsCount: paymentsSaved,
     });
+
   } catch (err: any) {
     console.error("[Save-All] Exception:", err);
     return NextResponse.json({ error: err?.message || "Erreur serveur" }, { status: 500 });

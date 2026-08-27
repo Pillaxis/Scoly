@@ -14,11 +14,13 @@ export async function GET() {
 
   try {
     // Check tables
-    const [schoolsRes, studentsRes, paymentsRes, classesRes, authUsersRes] = await Promise.all([
+    const [schoolsRes, studentsRes, paymentsRes, classesRes, notificationsRes, subscriptionsRes, authUsersRes] = await Promise.all([
       supabase.from("schools").select("id", { count: "exact", head: true }),
       supabase.from("students").select("id", { count: "exact", head: true }),
       supabase.from("payments").select("id", { count: "exact", head: true }),
       supabase.from("classes").select("id", { count: "exact", head: true }),
+      supabase.from("notifications").select("id", { count: "exact", head: true }),
+      supabase.from("subscriptions").select("id", { count: "exact", head: true }),
       supabase.auth.admin.listUsers({ page: 1, perPage: 1 }),
     ]);
 
@@ -33,10 +35,14 @@ export async function GET() {
         students: studentsRes.count ?? (studentsRes.error ? "Non trouvée" : 0),
         payments: paymentsRes.count ?? (paymentsRes.error ? "Non trouvée" : 0),
         classes: classesRes.count ?? (classesRes.error ? "Non trouvée" : 0),
+        notifications: notificationsRes.count ?? (notificationsRes.error ? "Non trouvée" : 0),
+        subscriptions: subscriptionsRes.count ?? (subscriptionsRes.error ? "Non trouvée" : 0),
       },
       usersCount: authUsersRes.data?.users?.length ?? 0,
       schemaError: schoolsRes.error ? schoolsRes.error.message : null,
     });
+
+
   } catch (err: any) {
     return NextResponse.json({
       connected: false,

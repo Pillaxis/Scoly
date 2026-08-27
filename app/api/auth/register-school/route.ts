@@ -148,9 +148,29 @@ export async function POST(req: NextRequest) {
         end_date: "2026-06-30",
         is_current: true,
       });
+
+      // Initialize 15-day Free Trial Subscription
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 15);
+
+      await supabase.from("subscriptions").insert({
+        school_id: schoolId,
+        plan: "start",
+        billing_period: "monthly",
+        status: "trialing",
+        price_amount: 0,
+        currency: "FCFA",
+        trial_start_at: now.toISOString(),
+        trial_end_at: trialEnd.toISOString(),
+        subscription_start_at: null,
+        subscription_end_at: null,
+        refund_eligible_until: null,
+      });
     } catch (dbErr) {
       console.warn("DB provisioning warning (will operate smoothly with local cache):", dbErr);
     }
+
 
     return NextResponse.json({
       success: true,

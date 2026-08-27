@@ -14,8 +14,14 @@ import type {
   Reminder,
   PaymentMethod,
   StaffMember,
+  ScolyNotification,
+  ScolySubscription,
+  SubscriptionPlan,
+  SubscriptionBillingPeriod,
 } from "@/types/scoly";
+
 import type { ImportBatchRecord } from "@/types/import";
+
 
 function sb() {
   return getSupabaseBrowser();
@@ -1129,4 +1135,284 @@ export async function batchImportToPostgres(params: {
   };
 }
 
+// ─── 13. NOTIFICATIONS (SYSTÈME INTELLIGENT) ──────────────
+
+export async function fetchNotificationsDb(
+  schoolId: string,
+  limit = 100
+): Promise<ScolyNotification[]> {
+  const client = sb();
+  if (!client || !schoolId) return [];
+
+  try {
+    const { data, error } = await withTimeout(
+      client
+        .from("notifications")
+        .select("*")
+        .eq("school_id", schoolId)
+        .order("created_at", { ascending: false })
+        .limit(limit)
+    );
+
+    if (error || !data) return [];
+
+    return data.map((n: any) => ({
+      id: n.id,
+      school_id: n.school_id,
+      user_id: n.user_id,
+      target_roles: n.target_roles || [],
+      type: n.type,
+      priority: n.priority || "info",
+      title: n.title,
+      message: n.message,
+      action_url: n.action_url,
+      action_label: n.action_label,
+      entity_type: n.entity_type,
+      entity_id: n.entity_id,
+      metadata: n.metadata || {},
+      is_read: Boolean(n.is_read),
+      read_at: n.read_at,
+      read_by: n.read_by || [],
+      dedup_key: n.dedup_key,
+      created_at: n.created_at || new Date().toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function insertNotificationDb(
+  notification: Partial<ScolyNotification>,
+  schoolId: string
+): Promise<{ success: boolean; data?: ScolyNotification }> {
+  const client = sb();
+  if (!client || !schoolId) return { success: false };
+
+  try {
+    const payload: any = {
+      school_id: schoolId,
+      user_id: notification.user_id || null,
+      target_roles: notification.target_roles || [],
+      type: notification.type || "info",
+      priority: notification.priority || "info",
+      title: notification.title,
+      message: notification.message,
+      action_url: notification.action_url || null,
+      action_label: notification.action_label || null,
+      entity_type: notification.entity_type || null,
+      entity_id: notification.entity_id || null,
+      metadata: notification.metadata || {},
+      is_read: notification.is_read || false,
+      dedup_key: notification.dedup_key || null,
+      created_at: notification.created_at || new Date().toISOString(),
+    };
+
+    if (notification.id) payload.id = notification.id;
+
+    const { data, error } = await client
+      .from("notifications")
+      .upsert(payload)
+      .select()
+      .single();
+
+    if (error) return { success: false };
+    return { success: true, data };
+  } catch {
+    return { success: false };
+  }
+}
+
+export async function markNotificationAsReadDb(
+  notificationId: string,
+  userId?: string
+): Promise<boolean> {
+  const client = sb();
+  if (!client || !notificationId) return false;
+
+  try {
+    const now = new Date().toISOString();
+    const { error } = await client
+      .from("notifications")
+      .update({
+        is_read: true,
+        read_at: now,
+      })
+      .eq("id", notificationId);
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function markAllNotificationsAsReadDb(
+  schoolId: string,
+  userId?: string
+): Promise<boolean> {
+  const client = sb();
+  if (!client || !schoolId) return false;
+
+  try {
+    const now = new Date().toISOString();
+    const { error } = await client
+      .from("notifications")
+      .update({
+        is_read: true,
+        read_at: now,
+      })
+      .eq("school_id", schoolId)
+      .eq("is_read", false);
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteNotificationDb(notificationId: string): Promise<boolean> {
+  const client = sb();
+  if (!client || !notificationId) return false;
+
+  try {
+    const { error } = await client
+      .from("notifications")
+      .delete()
+      .eq("id", notificationId);
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. ABONNEMENTS (SUBSCRIPTIONS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchSubscriptionDb(schoolId: string): Promise<ScolySubscription | null> {
+  const client = sb();
+  if (!client || !schoolId) return null;
+
+  try {
+    const { data, error } = await client
+      .from("subscriptions")
+      .select("*")
+      .eq("school_id", schoolId)
+      .limit(1)
+      .single();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      school_id: data.school_id,
+      plan: data.plan || "start",
+      billing_period: data.billing_period || "monthly",
+      status: data.status || "trialing",
+      price_amount: Number(data.price_amount) || 0,
+      currency: data.currency || "FCFA",
+      trial_start_at: data.trial_start_at,
+      trial_end_at: data.trial_end_at,
+      subscription_start_at: data.subscription_start_at,
+      subscription_end_at: data.subscription_end_at,
+      refund_eligible_until: data.refund_eligible_until,
+      cancelled_at: data.cancelled_at,
+      last_payment_reference: data.last_payment_reference,
+      last_payment_method: data.last_payment_method,
+      payment_provider: data.payment_provider || "fedapay",
+      metadata: data.metadata || {},
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function upsertSubscriptionDb(
+  sub: Partial<ScolySubscription> & { school_id: string }
+): Promise<ScolySubscription | null> {
+  const client = sb();
+  if (!client || !sub.school_id) return null;
+
+  try {
+    const payload = {
+      ...sub,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await client
+      .from("subscriptions")
+      .upsert(payload, { onConflict: "school_id" })
+      .select()
+      .single();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      school_id: data.school_id,
+      plan: data.plan,
+      billing_period: data.billing_period,
+      status: data.status,
+      price_amount: Number(data.price_amount) || 0,
+      currency: data.currency || "FCFA",
+      trial_start_at: data.trial_start_at,
+      trial_end_at: data.trial_end_at,
+      subscription_start_at: data.subscription_start_at,
+      subscription_end_at: data.subscription_end_at,
+      refund_eligible_until: data.refund_eligible_until,
+      cancelled_at: data.cancelled_at,
+      last_payment_reference: data.last_payment_reference,
+      last_payment_method: data.last_payment_method,
+      payment_provider: data.payment_provider,
+      metadata: data.metadata || {},
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function activatePaidSubscriptionDb(
+  schoolId: string,
+  plan: SubscriptionPlan,
+  billingPeriod: SubscriptionBillingPeriod,
+  transactionRef?: string,
+  amount?: number
+): Promise<ScolySubscription | null> {
+  const start = new Date();
+  const end = new Date(start);
+
+  if (billingPeriod === "yearly") {
+    end.setFullYear(end.getFullYear() + 1);
+  } else {
+    end.setMonth(end.getMonth() + 1);
+  }
+
+  // 30-day money-back guarantee starts immediately on payment
+  const refundUntil = new Date(start);
+  refundUntil.setDate(refundUntil.getDate() + 30);
+
+  const priceAmount = amount || (plan === "pro" ? (billingPeriod === "yearly" ? 84000 : 10000) : (billingPeriod === "yearly" ? 42000 : 5000));
+
+  return upsertSubscriptionDb({
+    school_id: schoolId,
+    plan,
+    billing_period: billingPeriod,
+    status: "active",
+    price_amount: priceAmount,
+    currency: "FCFA",
+    subscription_start_at: start.toISOString(),
+    subscription_end_at: end.toISOString(),
+    refund_eligible_until: refundUntil.toISOString(),
+    last_payment_reference: transactionRef || `SUB-${Date.now()}`,
+    last_payment_method: "fedapay_mobile_money",
+    payment_provider: "fedapay",
+  });
+}
+
 export { isSupabaseConfigured };
+
+

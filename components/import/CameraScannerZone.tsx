@@ -19,6 +19,9 @@ import { diagnoseImageQuality, preprocessImageForOcr } from "@/lib/ocr/image-pre
 import { performRegisterOCR, OCROutputResult } from "@/lib/ocr/ocr-engine";
 import { ImageQualityDiagnosis } from "@/types/import";
 import { ParsedSheetData } from "@/lib/import/parsers/excel-csv-parser";
+import { useScoly } from "@/lib/store";
+import { useGlobalModals } from "@/app/(dashboard)/layout";
+import { Crown } from "lucide-react";
 
 interface CameraScannerZoneProps {
   onOCRCompleted: (result: { fileName: string; sheetData: ParsedSheetData }) => void;
@@ -26,6 +29,10 @@ interface CameraScannerZoneProps {
 }
 
 export function CameraScannerZone({ onOCRCompleted, onBack }: CameraScannerZoneProps) {
+  const { hasFeature } = useScoly();
+  const { openProModal } = useGlobalModals();
+  const isProOcr = hasFeature("ai_ocr_scanner");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,6 +144,10 @@ export function CameraScannerZone({ onOCRCompleted, onBack }: CameraScannerZoneP
             </div>
 
             <div>
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 mb-2">
+                <Crown className="w-3 h-3 text-amber-600 fill-amber-500" />
+                <span>Fonctionnalité SCOLY PRO</span>
+              </div>
               <h3 className="text-base font-extrabold text-slate-900">
                 Numériser un cahier ou registre papier
               </h3>
@@ -165,23 +176,46 @@ export function CameraScannerZone({ onOCRCompleted, onBack }: CameraScannerZoneP
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => {
+                  if (!isProOcr) {
+                    openProModal(
+                      "ai_ocr_scanner",
+                      "Scanner IA & OCR de Documents",
+                      "Le scanner intelligent par caméra est réservé aux établissements disposant du forfait SCOLY PRO."
+                    );
+                    return;
+                  }
+                  cameraInputRef.current?.click();
+                }}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/20 transition-all cursor-pointer"
               >
                 <Camera className="w-4 h-4" />
                 <span>Prendre une photo (Appareil)</span>
+                {!isProOcr && <Crown className="w-3.5 h-3.5 text-amber-300 fill-amber-300 ml-1" />}
               </button>
 
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (!isProOcr) {
+                    openProModal(
+                      "ai_ocr_scanner",
+                      "Scanner IA & OCR de Documents",
+                      "Le scanner intelligent par photo est réservé aux établissements disposant du forfait SCOLY PRO."
+                    );
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
               >
                 <Upload className="w-4 h-4 text-slate-500" />
                 <span>Choisir une photo existante</span>
+                {!isProOcr && <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-400 ml-1" />}
               </button>
             </div>
           </div>
+
 
           {/* Conseils de prise de vue */}
           <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200/80 text-xs text-purple-900 space-y-1.5">

@@ -22,6 +22,7 @@ export function DatabaseStatusCard() {
     students,
     payments,
     tuitionPlans,
+    notifications,
     syncStatus,
     syncErrorMessage,
     syncLocalToSupabase,
@@ -33,6 +34,7 @@ export function DatabaseStatusCard() {
   const [copiedSql, setCopiedSql] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
 
   const checkStatus = async () => {
     setLoadingCheck(true);
@@ -134,7 +136,7 @@ export function DatabaseStatusCard() {
       )}
 
       {/* Grid of Database Entities Status */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Élèves Enregistrés</span>
           <div className="flex items-center justify-between mt-1">
@@ -174,7 +176,18 @@ export function DatabaseStatusCard() {
             </span>
           </div>
         </div>
+
+        <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl col-span-2 sm:col-span-1">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Notifications</span>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-lg font-black text-slate-900">{notifications.length}</span>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+              Temps Réel
+            </span>
+          </div>
+        </div>
       </div>
+
 
       {/* Deploy Schema Helper Box if tables need to be verified or run */}
       {!isTablesReady && (

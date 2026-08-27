@@ -30,7 +30,20 @@ DO $$ BEGIN
     CREATE TYPE reminder_status AS ENUM ('prepared', 'sent', 'delivered', 'failed');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
+DO $$ BEGIN
+    CREATE TYPE subscription_plan AS ENUM ('start', 'pro');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE subscription_billing_period AS ENUM ('monthly', 'yearly');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE subscription_status AS ENUM ('trialing', 'active', 'past_due', 'expired', 'cancelled');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
 -- ─── 2. TABLES FONDAMENTALES ──────────────────────────────────────────────────
+
 
 -- 2.1 ÉCOLES (TENANTS MULTI-ÉTABLISSEMENTS)
 CREATE TABLE IF NOT EXISTS schools (
@@ -244,6 +257,52 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 2.15 NOTIFICATIONS (SYSTÈME INTELLIGENT ET CONTEXTUEL)
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    target_roles TEXT[] DEFAULT '{}',
+    type VARCHAR(50) NOT NULL,
+    priority VARCHAR(20) NOT NULL DEFAULT 'info' CHECK (priority IN ('info', 'success', 'warning', 'critical')),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    action_url TEXT,
+    action_label VARCHAR(100),
+    entity_type VARCHAR(50),
+    entity_id VARCHAR(100),
+    metadata JSONB DEFAULT '{}',
+    is_read BOOLEAN DEFAULT false,
+    read_at TIMESTAMPTZ,
+    read_by UUID[] DEFAULT '{}',
+    dedup_key VARCHAR(150),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2.16 ABONNEMENTS SCOLY (SAAS SUBSCRIPTIONS)
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    plan subscription_plan NOT NULL DEFAULT 'start',
+    billing_period subscription_billing_period NOT NULL DEFAULT 'monthly',
+    status subscription_status NOT NULL DEFAULT 'trialing',
+    price_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    currency VARCHAR(10) NOT NULL DEFAULT 'FCFA',
+    trial_start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    trial_end_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 days'),
+    subscription_start_at TIMESTAMPTZ,
+    subscription_end_at TIMESTAMPTZ,
+    refund_eligible_until TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    last_payment_reference VARCHAR(150),
+    last_payment_method VARCHAR(50),
+    payment_provider VARCHAR(50) DEFAULT 'fedapay',
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_school_subscription UNIQUE(school_id)
+);
+
 -- ─── 3. INDEXES DE PERFORMANCE ────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_students_school_class ON students(school_id, class_id);
 CREATE INDEX IF NOT EXISTS idx_payments_student ON payments(student_id);
@@ -252,6 +311,17 @@ CREATE INDEX IF NOT EXISTS idx_parents_school_phone ON parents(school_id, phone_
 CREATE INDEX IF NOT EXISTS idx_tuition_plans_class ON tuition_plans(school_id, class_id);
 CREATE INDEX IF NOT EXISTS idx_payment_methods_school ON payment_methods_config(school_id, order_index);
 CREATE INDEX IF NOT EXISTS idx_import_batches_school ON import_batches(school_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_school_date ON notifications(school_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_school_unread ON notifications(school_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_school_type ON notifications(school_id, type);
+CREATE INDEX IF NOT EXISTS idx_notifications_entity ON notifications(school_id, entity_type, entity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedup_unique ON notifications(school_id, dedup_key) WHERE dedup_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_subscriptions_school ON public.subscriptions(school_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON public.subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_end_at ON public.subscriptions(subscription_end_at);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_trial_end ON public.subscriptions(trial_end_at);
+
+
 
 -- ─── 4. PROCÉDURE TRANSACTIONNELLE DE PAIEMENT SÉCURISÉ ────────────────────────
 CREATE OR REPLACE FUNCTION record_payment_v2(
@@ -379,6 +449,8 @@ ALTER TABLE payment_methods_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE import_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
 
 -- Helper pour identifier l'école de l'utilisateur connecté
 CREATE OR REPLACE FUNCTION current_user_school_id()
@@ -485,6 +557,42 @@ CREATE POLICY tenant_audit_logs_isolation ON audit_logs
     FOR ALL TO authenticated
     USING (school_id = current_user_school_id())
     WITH CHECK (school_id = current_user_school_id());
+
+-- 5.15 Politiques Notifications
+DROP POLICY IF EXISTS tenant_notifications_isolation ON notifications;
+CREATE POLICY tenant_notifications_isolation ON notifications
+    FOR ALL TO authenticated
+    USING (
+        school_id = current_user_school_id() 
+        OR school_id IN (SELECT sm.school_id FROM public.school_members sm WHERE sm.user_id = auth.uid())
+    )
+    WITH CHECK (
+        school_id = current_user_school_id() 
+        OR school_id IN (SELECT sm.school_id FROM public.school_members sm WHERE sm.user_id = auth.uid())
+    );
+
+-- 5.16 Politiques Abonnements (Subscriptions)
+DROP POLICY IF EXISTS tenant_subscriptions_isolation ON public.subscriptions;
+CREATE POLICY tenant_subscriptions_isolation ON public.subscriptions
+    FOR ALL TO authenticated
+    USING (
+        school_id = current_user_school_id() 
+        OR school_id IN (SELECT sm.school_id FROM public.school_members sm WHERE sm.user_id = auth.uid())
+    )
+    WITH CHECK (
+        school_id = current_user_school_id() 
+        OR school_id IN (SELECT sm.school_id FROM public.school_members sm WHERE sm.user_id = auth.uid())
+    );
+
+-- 5.17 Publication Realtime
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+    ALTER PUBLICATION supabase_realtime ADD TABLE subscriptions;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+    WHEN undefined_object THEN null;
+END $$;
+
 
 -- ─── 6. TRIGGER AUTOMATIQUE POUR TOUT NOUVEAU COMPTE UTILISATEUR ──────────────
 CREATE OR REPLACE FUNCTION public.handle_new_user()

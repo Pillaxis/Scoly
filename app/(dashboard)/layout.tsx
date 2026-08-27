@@ -9,8 +9,15 @@ import { BottomNav } from "@/components/shell/BottomNav";
 import { ScolyProvider, useScoly } from "@/lib/store";
 import { Payment, Student } from "@/types/scoly";
 import { ImportSourceType } from "@/types/import";
+import { BrowserNotificationBanner } from "@/components/notifications/BrowserNotificationBanner";
+import { NotificationToast } from "@/components/notifications/NotificationToast";
+import { TrialCountdownBanner } from "@/components/subscription/TrialCountdownBanner";
+import { TrialExpiredModal } from "@/components/subscription/TrialExpiredModal";
+import { ProFeatureModal } from "@/components/subscription/ProFeatureModal";
+import { FeatureKey } from "@/types/subscription";
 
 // Lazy-load modals — only loaded when user opens them
+
 const PaymentModal = dynamic(() => import("@/components/payments/PaymentModal").then(m => ({ default: m.PaymentModal })), { ssr: false });
 const ReceiptModal = dynamic(() => import("@/components/payments/ReceiptModal").then(m => ({ default: m.ReceiptModal })), { ssr: false });
 const StudentModal = dynamic(() => import("@/components/students/StudentModal").then(m => ({ default: m.StudentModal })), { ssr: false });
@@ -23,7 +30,9 @@ interface GlobalModalContextType {
   openStudentModal: (studentToEdit?: Student | null) => void;
   openReminderModal: (student: Student, channel?: "whatsapp" | "sms") => void;
   openImportModal: (initialSource?: ImportSourceType) => void;
+  openProModal: (featureKey?: FeatureKey, customTitle?: string, customDescription?: string) => void;
 }
+
 
 const GlobalModalContext = createContext<GlobalModalContextType | undefined>(undefined);
 
@@ -67,6 +76,11 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importInitialSource, setImportInitialSource] = useState<ImportSourceType>("excel");
 
+  const [isProModalOpen, setIsProModalOpen] = useState(false);
+  const [proModalFeatureKey, setProModalFeatureKey] = useState<FeatureKey | null>(null);
+  const [proModalTitle, setProModalTitle] = useState<string | undefined>();
+  const [proModalDesc, setProModalDesc] = useState<string | undefined>();
+
   const openPaymentModal = (studentId?: string) => {
     setPreselectedStudentId(studentId);
     setIsPaymentModalOpen(true);
@@ -98,6 +112,13 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
     setIsImportModalOpen(true);
   };
 
+  const openProModal = (featureKey?: FeatureKey, customTitle?: string, customDescription?: string) => {
+    setProModalFeatureKey(featureKey || null);
+    setProModalTitle(customTitle);
+    setProModalDesc(customDescription);
+    setIsProModalOpen(true);
+  };
+
   return (
     <GlobalModalContext.Provider
       value={{
@@ -106,6 +127,7 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
         openStudentModal,
         openReminderModal,
         openImportModal,
+        openProModal,
       }}
     >
       <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans text-slate-900">
@@ -114,6 +136,12 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          {/* Trial countdown reminder banner */}
+          <TrialCountdownBanner />
+
+          {/* Browser notification permission banner */}
+          <BrowserNotificationBanner />
+
           <Header
             onOpenPaymentModal={() => openPaymentModal()}
             onSelectPaymentReceipt={(paymentId) => openReceiptModal(paymentId)}
@@ -128,6 +156,9 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
 
         {/* Bottom Navigation for Mobile (iOS & Android) */}
         <BottomNav onOpenPaymentModal={() => openPaymentModal()} />
+
+        {/* Floating Intelligent Notification Toast */}
+        <NotificationToast />
 
         {/* Global Modals */}
         <PaymentModal
@@ -176,10 +207,29 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
           initialSource={importInitialSource}
           onClose={() => setIsImportModalOpen(false)}
         />
+
+        {/* SCOLY PRO Discovery / Upgrade Modal */}
+        <ProFeatureModal
+          isOpen={isProModalOpen}
+          featureKey={proModalFeatureKey}
+          customTitle={proModalTitle}
+          customDescription={proModalDesc}
+          onClose={() => {
+            setIsProModalOpen(false);
+            setProModalFeatureKey(null);
+            setProModalTitle(undefined);
+            setProModalDesc(undefined);
+          }}
+        />
+
+        {/* Paywall Modal upon 15-day Trial Expiration */}
+        <TrialExpiredModal />
       </div>
     </GlobalModalContext.Provider>
   );
+
 }
+
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return <DashboardShellContent>{children}</DashboardShellContent>;

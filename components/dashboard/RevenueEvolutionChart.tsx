@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { TrendingUp, Calendar, Info, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { TrendingUp, Calendar, Info, ArrowUpRight, ArrowDownRight, Crown } from "lucide-react";
 import { useScoly } from "@/lib/store";
 import { formatFCFA } from "@/lib/utils";
+import { useGlobalModals } from "@/app/(dashboard)/layout";
 
 type PeriodFilter = "monthly" | "quarterly" | "yearly";
+
 
 interface ChartDataPoint {
   key: string;
@@ -17,9 +19,26 @@ interface ChartDataPoint {
 }
 
 export function RevenueEvolutionChart() {
-  const { payments, students, tuitionPlans, academicYear } = useScoly();
+  const { payments, students, tuitionPlans, academicYear, hasFeature } = useScoly();
+  const { openProModal } = useGlobalModals();
   const [period, setPeriod] = useState<PeriodFilter>("monthly");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
+  const isProAnalytics = hasFeature("advanced_analytics");
+
+  const handlePeriodChange = (newPeriod: PeriodFilter) => {
+    if (newPeriod !== "monthly" && !isProAnalytics) {
+      openProModal(
+        "advanced_analytics",
+        "Analytics & Vues Multi-Périodes",
+        "Passez à SCOLY PRO pour débloquer les analyses trimestrielles, annuelles et les prévisions de trésorerie."
+      );
+      return;
+    }
+    setPeriod(newPeriod);
+    setHoveredIndex(null);
+  };
+
 
   // Current month key (e.g. "08" for August)
   const currentMonthKey = useMemo(() => {
@@ -274,10 +293,7 @@ export function RevenueEvolutionChart() {
         <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/70 self-start sm:self-auto">
           <button
             type="button"
-            onClick={() => {
-              setPeriod("monthly");
-              setHoveredIndex(null);
-            }}
+            onClick={() => handlePeriodChange("monthly")}
             className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               period === "monthly"
                 ? "bg-white text-slate-900 shadow-2xs"
@@ -289,35 +305,32 @@ export function RevenueEvolutionChart() {
 
           <button
             type="button"
-            onClick={() => {
-              setPeriod("quarterly");
-              setHoveredIndex(null);
-            }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            onClick={() => handlePeriodChange("quarterly")}
+            className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               period === "quarterly"
                 ? "bg-white text-slate-900 shadow-2xs"
                 : "text-slate-500 hover:text-slate-800"
             }`}
           >
-            Trimestriel
+            <span>Trimestriel</span>
+            {!isProAnalytics && <Crown className="w-3 h-3 text-amber-500 fill-amber-400" />}
           </button>
 
           <button
             type="button"
-            onClick={() => {
-              setPeriod("yearly");
-              setHoveredIndex(null);
-            }}
-            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            onClick={() => handlePeriodChange("yearly")}
+            className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
               period === "yearly"
                 ? "bg-white text-slate-900 shadow-2xs"
                 : "text-slate-500 hover:text-slate-800"
             }`}
           >
-            Annuel
+            <span>Annuel</span>
+            {!isProAnalytics && <Crown className="w-3 h-3 text-amber-500 fill-amber-400" />}
           </button>
         </div>
       </div>
+
 
       {/* Legend & Summary Values - Fixed height to avoid any layout shifts */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 pb-1 text-xs min-h-[36px]">

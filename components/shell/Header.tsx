@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { PlusCircle, Bell } from "lucide-react";
 import { useScoly } from "@/lib/store";
+import { filterNotificationsByRole } from "@/lib/notifications/analyzer";
 import { InlineHeaderSearch } from "./InlineHeaderSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { AuthModal } from "@/components/auth/AuthModal";
@@ -14,9 +15,14 @@ interface HeaderProps {
 }
 
 export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderProps) {
-  const { dashboardMetrics, currentUser } = useScoly();
+  const { unreadNotificationsCount, notifications, currentUser } = useScoly();
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const hasCriticalUnread = useMemo(() => {
+    const roleFiltered = filterNotificationsByRole(notifications, currentUser?.role);
+    return roleFiltered.some((n) => !n.is_read && n.priority === "critical");
+  }, [notifications, currentUser?.role]);
 
   return (
     <>
@@ -45,22 +51,30 @@ export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderPro
             <span>Encaisser</span>
           </button>
 
-          {/* Functional Notification Bell with Popup */}
+          {/* Functional Notification Bell with Realtime Counter */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setIsNotifOpen((prev) => !prev)}
-              className={`p-2 rounded-xl transition-colors relative cursor-pointer ${
+              className={`p-2 rounded-xl transition-all relative cursor-pointer flex items-center justify-center ${
                 isNotifOpen
-                  ? "bg-slate-900 text-white shadow-2xs"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
               title="Centre de notifications"
               aria-label="Ouvrir les notifications"
             >
               <Bell className="w-4 h-4" />
-              {dashboardMetrics.critical_alerts_count > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
+              {unreadNotificationsCount > 0 && (
+                <span
+                  className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-[10px] font-black rounded-full flex items-center justify-center text-white ring-2 ring-white shadow-2xs ${
+                    hasCriticalUnread
+                      ? "bg-rose-600 animate-pulse"
+                      : "bg-blue-600"
+                  }`}
+                >
+                  {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
+                </span>
               )}
             </button>
 
@@ -70,6 +84,7 @@ export function Header({ onOpenPaymentModal, onSelectPaymentReceipt }: HeaderPro
               onSelectPaymentReceipt={onSelectPaymentReceipt}
             />
           </div>
+
 
           <div className="h-5 w-px bg-slate-200 hidden sm:block" />
 

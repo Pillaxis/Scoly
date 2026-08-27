@@ -25,6 +25,12 @@ import {
   StaffMember,
   StaffRole,
   StaffPermission,
+  ScolyNotification,
+  ScolySubscription,
+  SubscriptionPlan,
+  SubscriptionBillingPeriod,
+  FeatureKey,
+  FeatureAccessResult,
 } from "@/types/scoly";
 import { ImportBatchRecord } from "@/types/import";
 import {
@@ -51,6 +57,12 @@ import {
   fetchReminders,
   fetchPaymentMethodsDb,
   fetchImportBatchesDb,
+  fetchNotificationsDb,
+  fetchSubscriptionDb,
+  insertNotificationDb,
+  markNotificationAsReadDb,
+  markAllNotificationsAsReadDb,
+  deleteNotificationDb,
   upsertSchool,
   upsertAcademicYearDb,
   upsertClassDb,
@@ -68,7 +80,38 @@ import {
   batchImportToPostgres,
   PaymentMethodConfig,
   getDefaultPaymentMethods,
+  upsertSubscriptionDb,
+  activatePaidSubscriptionDb,
 } from "./supabase/db";
+import {
+  analyzeSchoolState,
+  filterNotificationsByRole,
+} from "./notifications/analyzer";
+import {
+  createPaymentNotification,
+  createPaymentCancelledNotification,
+  createImportCompletedNotification,
+  createStudentEnrolledNotification,
+  createOperationErrorNotification,
+  createTrialStartedNotification,
+  createTrialExpiringNotification,
+  createTrialExpiredNotification,
+  createSubscriptionActivatedNotification,
+  createProFeatureSuggestionNotification,
+} from "./notifications/engine";
+import {
+  subscribeToSchoolNotifications,
+  broadcastNotificationEvent,
+} from "./notifications/realtime";
+import {
+  canAccessFeature,
+  getDefaultTrialSubscription,
+  calculateSubscriptionDates,
+  FEATURE_DEFINITIONS,
+} from "./subscription/features";
+
+
+
 
 export const DEFAULT_STAFF: StaffMember[] = [
   {
@@ -228,7 +271,29 @@ interface ScolyContextType {
     students: (Student & { balance_due: number; class_name: string })[];
     payments: Payment[];
   };
+  // Notifications (Système Intelligent, Réel & Contextuel)
+  notifications: ScolyNotification[];
+  unreadNotificationsCount: number;
+  addNotification: (notif: ScolyNotification) => Promise<void>;
+  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
+  deleteNotification: (notificationId: string) => Promise<void>;
+  triggerProactiveAnalysis: () => void;
+
+  // Abonnements & Forfaits (START, PRO, Essai 15j, Garantie 30j)
+  subscription: ScolySubscription;
+  hasFeature: (feature: FeatureKey) => boolean;
+  canAccess: (feature: FeatureKey) => FeatureAccessResult;
+  upgradeSubscription: (
+    plan: SubscriptionPlan,
+    billingPeriod: SubscriptionBillingPeriod,
+    transactionRef?: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  cancelCurrentSubscription: () => Promise<{ success: boolean; error?: string }>;
+  suggestProFeature: (featureKey: FeatureKey) => void;
+
   refreshFromSupabase: () => Promise<boolean>;
+
   syncLocalToSupabase: () => Promise<{ success: boolean; message?: string }>;
   resetToDefaults: () => void;
 }
@@ -248,12 +313,20 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(DEFAULT_STAFF);
   const [importBatches, setImportBatches] = useState<ImportBatchRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<ScolyNotification[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>(getDefaultPaymentMethods());
+  const [subscription, setSubscription] = useState<ScolySubscription>(() =>
+    getDefaultTrialSubscription(INITIAL_SCHOOL.id)
+  );
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("syncing");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | undefined>();
   const isSyncingRef = useRef(false);
+  const lastAnalysisTimeRef = useRef<number>(0);
+  const proFeatureSuggestionCooldownRef = useRef<Record<string, number>>({});
+
+
 
   // ─── 1. FETCH ALL DATA LIVE DIRECTLY FROM SUPABASE POSTGRESQL ───────────────
   const fetchAllFromSupabase = useCallback(
@@ -314,6 +387,17 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(data.auditLogs)) {
               setAuditLogs(data.auditLogs);
             }
+            if (Array.isArray(data.notifications)) {
+              setNotifications(data.notifications);
+            }
+            if (data.subscription) {
+              setSubscription(data.subscription);
+            } else if (data.school?.id) {
+              setSubscription(getDefaultTrialSubscription(data.school.id));
+            }
+            if (data.userRole) {
+              setCurrentUser((prev) => (prev ? { ...prev, role: data.userRole } : null));
+            }
 
             setSyncStatus("synced");
             setSyncErrorMessage(undefined);
@@ -330,7 +414,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           const sbYear = await fetchAcademicYear(sbSchool.id);
           if (sbYear) {
             setAcademicYear(sbYear);
-            const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods, sbBatches] =
+            const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods, sbBatches, sbNotifications, sbSub] =
               await Promise.all([
                 fetchAcademicYearsList(sbSchool.id),
                 fetchClasses(sbSchool.id, sbYear.id),
@@ -340,6 +424,8 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
                 fetchReminders(sbSchool.id),
                 fetchPaymentMethodsDb(sbSchool.id),
                 fetchImportBatchesDb(sbSchool.id),
+                fetchNotificationsDb(sbSchool.id),
+                fetchSubscriptionDb(sbSchool.id),
               ]);
 
             if (sbYearsList.length > 0) setAcademicYearsList(sbYearsList);
@@ -350,13 +436,18 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             setReminders(sbReminders);
             setPaymentMethods(sbMethods);
             setImportBatches(sbBatches);
+            if (sbNotifications.length > 0) setNotifications(sbNotifications);
+            if (sbSub) setSubscription(sbSub);
+            else setSubscription(getDefaultTrialSubscription(sbSchool.id));
           }
           setSyncStatus("synced");
           setSyncErrorMessage(undefined);
+
           isSyncingRef.current = false;
           setIsLoaded(true);
           return true;
         }
+
 
         setSyncStatus("synced");
         isSyncingRef.current = false;
@@ -631,6 +722,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     setPayments([]);
     setReminders([]);
     setImportBatches([]);
+    setNotifications([]);
     await fetchAllFromSupabase();
   }, [fetchAllFromSupabase]);
 
@@ -654,6 +746,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           paymentMethods,
           reminders,
           importBatches,
+          notifications,
           user_id: currentUser?.id,
           email: currentUser?.email || school?.email,
         }),
@@ -684,8 +777,10 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     paymentMethods,
     reminders,
     importBatches,
+    notifications,
     currentUser,
   ]);
+
 
   // ─── 4. FINANCIAL CALCULATORS ──────────────────────────────────────────────
   const getStudentFinancialSummary = useCallback(
@@ -865,6 +960,202 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [payments, students, getStudentFinancialSummary]);
 
+  // ─── 4.1 NOTIFICATIONS SYSTEM (INTELLIGENT, RÉEL & CONTEXTUEL) ─────────────
+
+  // Unread count calculated dynamically with role-based filtering
+  const unreadNotificationsCount = useMemo(() => {
+    const roleFiltered = filterNotificationsByRole(notifications, currentUser?.role);
+    return roleFiltered.filter((n) => !n.is_read).length;
+  }, [notifications, currentUser?.role]);
+
+  // Realtime multi-device subscription (PC <-> Mobile instantaneous sync)
+  useEffect(() => {
+    if (!school.id) return;
+
+    const unsubscribe = subscribeToSchoolNotifications(school.id, (event) => {
+      if (event.type === "NEW_NOTIFICATION" && event.notification) {
+        const newNotif = event.notification;
+        setNotifications((prev) => {
+          if (
+            prev.some(
+              (n) =>
+                n.id === newNotif.id ||
+                (newNotif.dedup_key && n.dedup_key === newNotif.dedup_key)
+            )
+          ) {
+            return prev;
+          }
+          return [newNotif, ...prev];
+        });
+      } else if (event.type === "NOTIFICATION_READ" && event.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === event.notificationId
+              ? { ...n, is_read: true, read_at: new Date().toISOString() }
+              : n
+          )
+        );
+      } else if (event.type === "MARK_ALL_READ") {
+        setNotifications((prev) =>
+          prev.map((n) => ({
+            ...n,
+            is_read: true,
+            read_at: new Date().toISOString(),
+          }))
+        );
+      } else if (event.type === "NOTIFICATION_DELETED" && event.notificationId) {
+        setNotifications((prev) =>
+          prev.filter((n) => n.id !== event.notificationId)
+        );
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [school.id]);
+
+  // Proactive analysis of real school state (debts, upcoming, 0-data guidance, anti-spam)
+  const triggerProactiveAnalysis = useCallback(() => {
+    if (!school.id || !isLoaded) return;
+
+    const generated = analyzeSchoolState({
+      school,
+      students,
+      payments,
+      tuitionPlans,
+      getStudentFinancialSummary,
+      existingNotifications: notifications,
+      userRole: currentUser?.role,
+      subscription,
+    });
+
+    if (generated.length > 0) {
+      setNotifications((prev) => {
+        const existingIds = new Set(prev.map((n) => n.id));
+        const existingDedups = new Set(
+          prev.map((n) => n.dedup_key).filter(Boolean) as string[]
+        );
+
+        const toAdd = generated.filter(
+          (n) =>
+            !existingIds.has(n.id) &&
+            (!n.dedup_key || !existingDedups.has(n.dedup_key))
+        );
+
+        if (toAdd.length === 0) return prev;
+
+        // Persist new proactive alerts to Supabase in background
+        toAdd.forEach((notif) => {
+          insertNotificationDb(notif, school.id).catch(() => {});
+        });
+
+        return [...toAdd, ...prev];
+      });
+    }
+  }, [
+    school,
+    students,
+    payments,
+    tuitionPlans,
+    getStudentFinancialSummary,
+    notifications,
+    currentUser?.role,
+    subscription,
+    isLoaded,
+  ]);
+
+
+  // Trigger proactive analysis safely with rate limiter
+  useEffect(() => {
+    if (isLoaded && school.id) {
+      const now = Date.now();
+      if (now - lastAnalysisTimeRef.current > 8000) {
+        lastAnalysisTimeRef.current = now;
+        triggerProactiveAnalysis();
+      }
+    }
+  }, [isLoaded, school.id, students.length, payments.length, triggerProactiveAnalysis]);
+
+  const addNotification = useCallback(
+    async (notif: ScolyNotification) => {
+      setNotifications((prev) => {
+        if (
+          prev.some(
+            (n) =>
+              n.id === notif.id ||
+              (notif.dedup_key && n.dedup_key === notif.dedup_key)
+          )
+        ) {
+          return prev;
+        }
+        return [notif, ...prev];
+      });
+
+      insertNotificationDb(notif, school.id).catch(() => {});
+
+      broadcastNotificationEvent({
+        type: "NEW_NOTIFICATION",
+        notification: notif,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+    },
+    [school.id, currentUser?.id]
+  );
+
+  const markNotificationAsRead = useCallback(
+    async (notificationId: string) => {
+      const now = new Date().toISOString();
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notificationId ? { ...n, is_read: true, read_at: now } : n
+        )
+      );
+
+      markNotificationAsReadDb(notificationId, currentUser?.id).catch(() => {});
+
+      broadcastNotificationEvent({
+        type: "NOTIFICATION_READ",
+        notificationId,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+    },
+    [school.id, currentUser?.id]
+  );
+
+  const markAllNotificationsAsRead = useCallback(async () => {
+    const now = new Date().toISOString();
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, is_read: true, read_at: now }))
+    );
+
+    markAllNotificationsAsReadDb(school.id, currentUser?.id).catch(() => {});
+
+    broadcastNotificationEvent({
+      type: "MARK_ALL_READ",
+      schoolId: school.id,
+      senderUserId: currentUser?.id,
+    });
+  }, [school.id, currentUser?.id]);
+
+  const deleteNotification = useCallback(
+    async (notificationId: string) => {
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+
+      deleteNotificationDb(notificationId).catch(() => {});
+
+      broadcastNotificationEvent({
+        type: "NOTIFICATION_DELETED",
+        notificationId,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+    },
+    [school.id, currentUser?.id]
+  );
+
   // Action: Log Audit Event
   const logAudit = useCallback(
     (action: string, entityType: string, entityId: string, payload: any) => {
@@ -885,6 +1176,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ─── 5. DATA MUTATION ACTIONS (DIRECT POSTGRESQL TRANSACTIONS) ───────────────
+
 
   // Action: Add Payment
   const addPayment = useCallback(
@@ -979,6 +1271,22 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         receipt_number,
       });
 
+      // Generate intelligent notification
+      const payNotif = createPaymentNotification({
+        payment: newPayment,
+        schoolId: school.id,
+        studentName: newPayment.student_name,
+        className: newPayment.class_name,
+      });
+      setNotifications((prev) => [payNotif, ...prev]);
+      insertNotificationDb(payNotif, school.id).catch(() => {});
+      broadcastNotificationEvent({
+        type: "NEW_NOTIFICATION",
+        notification: payNotif,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+
       return newPayment;
     },
     [students, school, academicYear, payments, getStudentFinancialSummary, currentUser, logAudit]
@@ -1027,9 +1335,25 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         reason: cleanReason,
       });
 
+      // Generate cancel notification
+      const cancelNotif = createPaymentCancelledNotification({
+        payment: targetPayment,
+        schoolId: school.id,
+        reason: cleanReason,
+        cancelledByName: user,
+      });
+      setNotifications((prev) => [cancelNotif, ...prev]);
+      insertNotificationDb(cancelNotif, school.id).catch(() => {});
+      broadcastNotificationEvent({
+        type: "NEW_NOTIFICATION",
+        notification: cancelNotif,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+
       return true;
     },
-    [payments, currentUser, logAudit]
+    [payments, school.id, currentUser, logAudit]
   );
 
   // Action: Add Student
@@ -1098,10 +1422,25 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         console.warn("[SCOLY] Supabase insert student error:", err);
       });
 
+      // Generate student enrolled notification
+      const studentNotif = createStudentEnrolledNotification({
+        student: newStudent,
+        schoolId: school.id,
+      });
+      setNotifications((prev) => [studentNotif, ...prev]);
+      insertNotificationDb(studentNotif, school.id).catch(() => {});
+      broadcastNotificationEvent({
+        type: "NEW_NOTIFICATION",
+        notification: studentNotif,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+
       return newStudent;
     },
-    [classes, students, school, academicYear]
+    [classes, students, school, academicYear, currentUser]
   );
+
 
   // Action: Update Student
   const updateStudent = useCallback(
@@ -1500,10 +1839,27 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     [students, payments, getStudentFinancialSummary]
   );
 
-  const recordImportBatch = useCallback((batch: ImportBatchRecord) => {
-    setImportBatches((prev) => [batch, ...prev]);
-    insertImportBatchDb(batch).catch(() => {});
-  }, []);
+  const recordImportBatch = useCallback(
+    (batch: ImportBatchRecord) => {
+      setImportBatches((prev) => [batch, ...prev]);
+      insertImportBatchDb(batch).catch(() => {});
+
+      // Generate import completed notification
+      const importNotif = createImportCompletedNotification({
+        batch,
+        schoolId: school.id,
+      });
+      setNotifications((prev) => [importNotif, ...prev]);
+      insertNotificationDb(importNotif, school.id).catch(() => {});
+      broadcastNotificationEvent({
+        type: "NEW_NOTIFICATION",
+        notification: importNotif,
+        schoolId: school.id,
+        senderUserId: currentUser?.id,
+      });
+    },
+    [school.id, currentUser]
+  );
 
   // ─── 6. PAYMENT METHODS CONFIG ─────────────────────────────
   const addPaymentMethod = useCallback(
@@ -1552,6 +1908,132 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     [school.id]
   );
 
+  // ─── 7. SUBSCRIPTION & FEATURE ACCESS ENGINE ─────────────────
+  const hasFeature = useCallback(
+    (feature: FeatureKey): boolean => {
+      return canAccessFeature(subscription, feature).allowed;
+    },
+    [subscription]
+  );
+
+  const canAccess = useCallback(
+    (feature: FeatureKey): FeatureAccessResult => {
+      return canAccessFeature(subscription, feature);
+    },
+    [subscription]
+  );
+
+  const upgradeSubscription = useCallback(
+    async (
+      plan: SubscriptionPlan,
+      billingPeriod: SubscriptionBillingPeriod,
+      transactionRef?: string
+    ): Promise<{ success: boolean; error?: string }> => {
+      if (!school.id) return { success: false, error: "Établissement non sélectionné." };
+
+      try {
+        const res = await fetch("/api/subscription/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            school_id: school.id,
+            plan,
+            billing_period: billingPeriod,
+            transaction_id: transactionRef,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          return { success: false, error: data.error || "Échec de l'activation." };
+        }
+
+        const updatedSub: ScolySubscription = data.subscription;
+        setSubscription(updatedSub);
+
+        const endDateFormatted = updatedSub.subscription_end_at
+          ? new Date(updatedSub.subscription_end_at).toLocaleDateString("fr-FR", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })
+          : "1 an";
+
+        const notif = createSubscriptionActivatedNotification({
+          schoolId: school.id,
+          plan,
+          billingPeriod,
+          formattedEndDate: endDateFormatted,
+        });
+
+        setNotifications((prev) => [notif, ...prev]);
+        insertNotificationDb(notif, school.id).catch(() => {});
+        broadcastNotificationEvent({
+          type: "NEW_NOTIFICATION",
+          notification: notif,
+          schoolId: school.id,
+          senderUserId: currentUser?.id,
+        });
+
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message || "Erreur de connexion." };
+      }
+    },
+    [school.id, currentUser]
+  );
+
+  const cancelCurrentSubscription = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (!school.id) return { success: false, error: "Établissement non sélectionné." };
+
+    try {
+      const now = new Date().toISOString();
+      const updated = await upsertSubscriptionDb({
+        school_id: school.id,
+        status: "cancelled",
+        cancelled_at: now,
+      });
+
+      if (updated) {
+        setSubscription(updated);
+        return { success: true };
+      }
+      return { success: false, error: "Erreur lors de la résiliation." };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Erreur serveur." };
+    }
+  }, [school.id]);
+
+  const suggestProFeature = useCallback(
+    (featureKey: FeatureKey) => {
+      if (!school.id) return;
+      const def = FEATURE_DEFINITIONS[featureKey];
+      if (!def) return;
+
+      const now = Date.now();
+      const lastSuggested = proFeatureSuggestionCooldownRef.current[featureKey] || 0;
+      // Anti-spam cooldown: 24h
+      if (now - lastSuggested < 24 * 60 * 60 * 1000) {
+        return;
+      }
+      proFeatureSuggestionCooldownRef.current[featureKey] = now;
+
+      const notif = createProFeatureSuggestionNotification({
+        schoolId: school.id,
+        featureTitle: def.title,
+        featureKey,
+      });
+
+      setNotifications((prev) => {
+        if (prev.some((n) => n.dedup_key === notif.dedup_key)) return prev;
+        return [notif, ...prev];
+      });
+
+      insertNotificationDb(notif, school.id).catch(() => {});
+    },
+    [school.id]
+  );
+
   const resetToDefaults = useCallback(() => {
     setSchool(INITIAL_SCHOOL);
     setClasses(INITIAL_CLASSES);
@@ -1562,7 +2044,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     setStaffMembers(DEFAULT_STAFF);
     setImportBatches([]);
     setAuditLogs([]);
+    setNotifications([]);
     setPaymentMethods(getDefaultPaymentMethods());
+    setSubscription(getDefaultTrialSubscription(INITIAL_SCHOOL.id));
     setCurrentUser(null);
   }, []);
 
@@ -1579,6 +2063,19 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         reminders,
         staffMembers,
         importBatches,
+        notifications,
+        unreadNotificationsCount,
+        addNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        deleteNotification,
+        triggerProactiveAnalysis,
+        subscription,
+        hasFeature,
+        canAccess,
+        upgradeSubscription,
+        cancelCurrentSubscription,
+        suggestProFeature,
         isLoaded,
         isSupabaseConnected: isSupabaseConfigured,
         syncStatus,
@@ -1625,7 +2122,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       {children}
     </ScolyContext.Provider>
   );
+
 }
+
 
 export function useScoly() {
   const context = useContext(ScolyContext);

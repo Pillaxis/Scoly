@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getDefaultTrialSubscription } from "@/lib/subscription/features";
+
 
 export async function POST(req: NextRequest) {
   const supabase = getSupabaseServer();
@@ -11,18 +13,20 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { school_id, user_id, email } = body;
 
-    // 1. Resolve Target School ID from PostgreSQL
+    // 1. Resolve Target School ID & User Role from PostgreSQL
     let targetSchoolId = school_id;
+    let resolvedUserRole: string = "director";
 
-    if (!targetSchoolId && user_id) {
+    if (user_id) {
       const { data: member } = await supabase
         .from("school_members")
-        .select("school_id")
+        .select("school_id, role")
         .eq("user_id", user_id)
         .eq("is_active", true)
         .limit(1)
         .single();
       if (member?.school_id) targetSchoolId = member.school_id;
+      if (member?.role) resolvedUserRole = member.role;
     }
 
     if (!targetSchoolId && email) {
@@ -59,6 +63,8 @@ export async function POST(req: NextRequest) {
         remindersRes,
         batchesRes,
         auditRes,
+        notificationsRes,
+        subscriptionsRes,
       ] = await Promise.allSettled([
         supabase.from("schools").select("*").eq("id", targetSchoolId).single(),
         supabase
@@ -99,7 +105,8 @@ export async function POST(req: NextRequest) {
               matricule,
               classes(name),
               student_parents(
-                parent:parents(full_name, phone_primary)
+                is_primary_contact,
+                parent:parents(phone_primary, full_name)
               )
             )
           `)
@@ -126,23 +133,34 @@ export async function POST(req: NextRequest) {
             parents(full_name, phone_primary)
           `)
           .eq("school_id", targetSchoolId)
-          .order("sent_at", { ascending: false })
-          .limit(200),
+          .order("sent_at", { ascending: false }),
         supabase
           .from("import_batches")
           .select("*")
           .eq("school_id", targetSchoolId)
-          .order("created_at", { ascending: false })
-          .limit(50),
+          .order("created_at", { ascending: false }),
         supabase
           .from("audit_logs")
           .select("*")
           .eq("school_id", targetSchoolId)
           .order("created_at", { ascending: false })
           .limit(100),
+        supabase
+          .from("notifications")
+          .select("*")
+          .eq("school_id", targetSchoolId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("school_id", targetSchoolId)
+          .limit(1)
+          .single(),
       ]);
 
       const schoolData = schoolRes.status === "fulfilled" ? schoolRes.value.data : null;
+
 
       if (schoolData) {
         // Map Students
@@ -276,9 +294,46 @@ export async function POST(req: NextRequest) {
         const importBatches = batchesRes.status === "fulfilled" && batchesRes.value.data ? batchesRes.value.data : [];
         const auditLogs = auditRes.status === "fulfilled" && auditRes.value.data ? auditRes.value.data : [];
 
+        // Map Notifications
+        const rawNotifications = notificationsRes.status === "fulfilled" && notificationsRes.value.data ? notificationsRes.value.data : [];
+        const notifications = rawNotifications.map((n: any) => ({
+          id: n.id,
+          school_id: n.school_id,
+          user_id: n.user_id,
+          target_roles: n.target_roles || [],
+          type: n.type,
+          priority: n.priority || "info",
+          title: n.title,
+          message: n.message,
+          action_url: n.action_url,
+          action_label: n.action_label,
+          entity_type: n.entity_type,
+          entity_id: n.entity_id,
+          metadata: n.metadata || {},
+          is_read: Boolean(n.is_read),
+          read_at: n.read_at,
+          read_by: n.read_by || [],
+          dedup_key: n.dedup_key,
+          created_at: n.created_at || new Date().toISOString(),
+        }));
+
+        // Map Subscription (or auto-provision 15-day trial)
+        let subscription = subscriptionsRes.status === "fulfilled" && subscriptionsRes.value.data ? subscriptionsRes.value.data : null;
+        if (!subscription && targetSchoolId) {
+          subscription = getDefaultTrialSubscription(targetSchoolId);
+          try {
+            await supabase.from("subscriptions").upsert(subscription, { onConflict: "school_id" });
+          } catch (upsertErr) {
+            console.warn("Bootstrap trial subscription upsert error:", upsertErr);
+          }
+        }
+
+
+
         return NextResponse.json({
           success: true,
           source: "postgres",
+          userRole: resolvedUserRole,
           school: schoolData,
           academicYear: yearRes.status === "fulfilled" ? yearRes.value.data : null,
           academicYearsList: yearsListRes.status === "fulfilled" && yearsListRes.value.data ? yearsListRes.value.data : [],
@@ -290,9 +345,13 @@ export async function POST(req: NextRequest) {
           reminders,
           importBatches,
           auditLogs,
+          notifications,
+          subscription,
         });
       }
     }
+
+
 
     return NextResponse.json({
       success: false,

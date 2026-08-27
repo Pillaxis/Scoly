@@ -20,13 +20,20 @@ import {
   Plus,
   CreditCard,
   X,
+  Bell,
+  Database,
+  Crown,
 } from "lucide-react";
+
 import { StaffMember, SchoolClass, Student } from "@/types/scoly";
 import { StaffModal } from "@/components/settings/StaffModal";
 import { ClassModal } from "@/components/classes/ClassModal";
+import { NotificationPreferencesCard } from "@/components/settings/NotificationPreferencesCard";
+import { DatabaseStatusCard } from "@/components/settings/DatabaseStatusCard";
 import { useScoly } from "@/lib/store";
 
 export default function SettingsPage() {
+
   const {
     school,
     academicYear,
@@ -866,14 +873,43 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Section 5 : Maintenance du Système (Sobre) */}
+        {/* Section Abonnement & Forfaits SCOLY */}
+        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent p-5 sm:p-6 rounded-2xl border border-amber-300 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-amber-600 fill-amber-500" />
+              <h3 className="text-sm font-extrabold text-slate-900">
+                Abonnement & Forfaits SCOLY
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600">
+              Gérez votre formule START ou PRO, vos options de facturation et votre garantie de remboursement 30 jours.
+            </p>
+          </div>
+
+          <a
+            href="/subscription"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20 transition-all hover:scale-105 active:scale-95 shrink-0"
+          >
+            <span>Gérer mon abonnement</span>
+          </a>
+        </div>
+
+        {/* Section 5 : Notifications Intelligentes & Temps Réel */}
+        <NotificationPreferencesCard />
+
+
+        {/* Section 6 : État Base de Données PostgreSQL Supabase */}
+        <DatabaseStatusCard />
+
+        {/* Section 7 : Maintenance du Système */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
               Maintenance des Données
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Toutes vos données (élèves, paiements, grilles, classes, équipe) sont sécurisées en mémoire locale.
+              Toutes vos données (élèves, paiements, grilles, classes, équipe, notifications) sont sécurisées en temps réel dans PostgreSQL.
             </p>
           </div>
 
@@ -887,6 +923,7 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
 
       {/* Modal d'Ajout / Modification Classe */}
       <ClassModal

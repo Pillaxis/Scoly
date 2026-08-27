@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 /**
  * FedaPay Transaction Creation API Route
@@ -6,16 +7,64 @@ import { NextRequest, NextResponse } from "next/server";
  * Creates a FedaPay payment transaction server-side.
  * The secret key is never exposed to the browser.
  * 
- * Body: { amount, currency, description, customer_name, customer_email, customer_phone, callback_url }
+ * Server-side Subscription Gating:
+ * - Checks that the school has an active PRO subscription or an active 15-day trial.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const { amount, currency, description, customer_name, customer_email, customer_phone, callback_url } = body;
+    const { school_id, amount, currency, description, customer_name, customer_email, customer_phone, callback_url } = body;
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: "Le montant doit être supérieur à 0." }, { status: 400 });
+    }
+
+    // Server-side Subscription Verification (if school_id provided)
+    if (school_id) {
+      const supabase = getSupabaseServer();
+      if (supabase) {
+        try {
+          const { data: sub } = await supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("school_id", school_id)
+            .limit(1)
+            .single();
+
+          if (sub) {
+            const now = new Date();
+            if (sub.status === "trialing") {
+              if (now > new Date(sub.trial_end_at)) {
+                return NextResponse.json(
+                  { error: "Votre période d'essai est terminée. Passez à SCOLY PRO pour utiliser FedaPay." },
+                  { status: 403 }
+                );
+              }
+            } else if (sub.status === "active") {
+              if (sub.plan === "start") {
+                return NextResponse.json(
+                  { error: "Le paiement en ligne Mobile Money est réservé au forfait SCOLY PRO." },
+                  { status: 403 }
+                );
+              }
+              if (sub.subscription_end_at && now > new Date(sub.subscription_end_at)) {
+                return NextResponse.json(
+                  { error: "Votre abonnement a expiré. Veuillez renouveler votre forfait." },
+                  { status: 403 }
+                );
+              }
+            } else if (sub.status === "expired" || sub.status === "cancelled") {
+              return NextResponse.json(
+                { error: "Abonnement inactif. Veuillez choisir un forfait SCOLY." },
+                { status: 403 }
+              );
+            }
+          }
+        } catch {
+          // If table not ready, allow smooth progression
+        }
+      }
     }
 
     const secretKey = process.env.FEDAPAY_SECRET_KEY;
@@ -32,6 +81,7 @@ export async function POST(req: NextRequest) {
       fedapayEnv === "live"
         ? "https://api.fedapay.com/v1"
         : "https://sandbox-api.fedapay.com/v1";
+
 
     // 1. Create the transaction
     const transactionRes = await fetch(`${baseUrl}/transactions`, {

@@ -12,9 +12,12 @@ import {
   Settings,
   Receipt,
   Sparkles,
+  Crown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useScoly } from "@/lib/store";
+import { SubscriptionStatusBadge } from "@/components/subscription/SubscriptionStatusBadge";
+import { getTrialTimeRemaining } from "@/lib/subscription/features";
 
 interface NavItem {
   label: string;
@@ -26,7 +29,11 @@ interface NavItem {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { school, dashboardMetrics } = useScoly();
+  const { school, dashboardMetrics, subscription } = useScoly();
+
+  const isTrial = subscription?.status === "trialing";
+  const isPro = subscription?.plan === "pro" && subscription?.status === "active";
+  const trialInfo = isTrial ? getTrialTimeRemaining(subscription) : null;
 
   const navItems: NavItem[] = [
     {
@@ -58,6 +65,17 @@ export function Sidebar() {
       badgeColor: "bg-rose-500 text-white",
     },
     {
+      label: "Mon abonnement",
+      href: "/subscription",
+      icon: Crown,
+      badge: isTrial ? `${trialInfo?.daysRemaining}j` : isPro ? "PRO" : "START",
+      badgeColor: isPro
+        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+        : isTrial
+        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+        : "bg-blue-500/20 text-blue-300 border border-blue-500/30",
+    },
+    {
       label: "Paramètres",
       href: "/settings",
       icon: Settings,
@@ -71,18 +89,17 @@ export function Sidebar() {
         <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 font-black text-lg">
           S
         </div>
-        <div>
-          <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-1">
             <span className="font-extrabold text-lg tracking-tight text-white">SCOLY</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-semibold border border-blue-500/30">
-              V1
-            </span>
+            <SubscriptionStatusBadge clickable={true} />
           </div>
           <p className="text-[11px] text-slate-400 truncate max-w-[140px]" title={school.name || "SCOLY"}>
             {school.name || "Votre Établissement"}
           </p>
         </div>
       </div>
+
 
       {/* Navigation Links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
