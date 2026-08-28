@@ -645,23 +645,7 @@ BEGIN
         true
     );
 
-    -- 4. Création des classes par défaut
-    INSERT INTO public.classes (school_id, academic_year_id, name, level, order_index) VALUES
-        (v_school_id, v_year_id, 'CI', 'Primaire', 1),
-        (v_school_id, v_year_id, 'CP', 'Primaire', 2),
-        (v_school_id, v_year_id, 'CE1', 'Primaire', 3),
-        (v_school_id, v_year_id, 'CE2', 'Primaire', 4),
-        (v_school_id, v_year_id, 'CM1', 'Primaire', 5),
-        (v_school_id, v_year_id, 'CM2', 'Primaire', 6),
-        (v_school_id, v_year_id, '6ème A', 'Collège', 7),
-        (v_school_id, v_year_id, '5ème A', 'Collège', 8),
-        (v_school_id, v_year_id, '4ème A', 'Collège', 9),
-        (v_school_id, v_year_id, '3ème A', 'Collège', 10),
-        (v_school_id, v_year_id, '2nde CD', 'Lycée', 11),
-        (v_school_id, v_year_id, '1ère D', 'Lycée', 12),
-        (v_school_id, v_year_id, 'Terminale D', 'Lycée', 13);
-
-    -- 5. Création des moyens de paiement par défaut
+    -- 4. Création des moyens de paiement par défaut
     INSERT INTO public.payment_methods_config (school_id, key, label, is_active, order_index) VALUES
         (v_school_id, 'cash', 'Espèces', true, 0),
         (v_school_id, 'tmoney', 'TMoney', true, 1),

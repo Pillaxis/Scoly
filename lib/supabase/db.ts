@@ -230,7 +230,18 @@ export async function fetchClasses(schoolId: string, yearId?: string): Promise<S
 
     if (error || !data) return [];
 
-    return data.map((c: any) => ({
+    const SEED_NAMES = new Set([
+      "CI", "CP", "CE1", "CE2", "CM1", "CM2",
+      "6ème A", "5ème A", "4ème A", "3ème A",
+      "2nde CD", "1ère D", "Terminale D"
+    ]);
+
+    let filtered = data;
+    if (data.length === 13 && data.every((c: any) => SEED_NAMES.has(c.name))) {
+      filtered = [];
+    }
+
+    return filtered.map((c: any) => ({
       id: c.id,
       school_id: c.school_id,
       academic_year_id: c.academic_year_id,

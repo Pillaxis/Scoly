@@ -127,45 +127,62 @@ export default function TuitionPage() {
           </div>
 
           {/* Direct Class Configuration Cards */}
-          <div>
-            <div className="flex items-center justify-between mb-3 px-1">
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                Classes Disponibles de l&apos;Établissement ({classes.length})
-              </h3>
-              <span className="text-[11px] text-slate-400">Cliquez pour configurer</span>
+          {classes.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-8 text-center space-y-3 max-w-xl mx-auto">
+              <p className="text-xs font-bold text-slate-700">Aucune classe configurée</p>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Ajoutez vos classes pour leur attribuer leurs tarifs et échéances de paiement personnalisés.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsClassModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Ajouter une Première Classe</span>
+              </button>
             </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-3 px-1">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                  Classes Disponibles de l&apos;Établissement ({classes.length})
+                </h3>
+                <span className="text-[11px] text-slate-400">Cliquez pour configurer</span>
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {classes.map((cls) => (
-                <div
-                  key={cls.id}
-                  onClick={() => handleOpenCreateModal(cls.id)}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
-                        {cls.name}
-                      </h4>
-                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded mt-1 inline-block">
-                        {cls.level}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {classes.map((cls) => (
+                  <div
+                    key={cls.id}
+                    onClick={() => handleOpenCreateModal(cls.id)}
+                    className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                          {cls.name}
+                        </h4>
+                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded mt-1 inline-block">
+                          {cls.level}
+                        </span>
+                      </div>
+                      <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        <Plus className="w-4 h-4" />
                       </span>
                     </div>
-                    <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      <Plus className="w-4 h-4" />
-                    </span>
-                  </div>
 
-                  <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                    <span>Non tarifiée</span>
-                    <span className="font-bold text-blue-600 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[11px]">
-                      Configurer <ArrowRight className="w-3 h-3" />
-                    </span>
+                    <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                      <span>Non tarifiée</span>
+                      <span className="font-bold text-blue-600 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[11px]">
+                        Configurer <ArrowRight className="w-3 h-3" />
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       ) : (
         /* Configured Tuition Plans Grid */
