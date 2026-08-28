@@ -268,7 +268,7 @@ export default function RegisterPage() {
                     </label>
                     <input
                       type="tel"
-                      placeholder="+228 90 00 00 00"
+                      placeholder="Ex: +228 90 12 34 56"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-none placeholder:text-slate-400 placeholder:font-normal"

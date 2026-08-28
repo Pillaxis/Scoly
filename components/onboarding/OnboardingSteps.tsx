@@ -84,10 +84,10 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           </label>
           <input
             type="tel"
-            placeholder="+228 90 12 34 56"
-            value={school.phone}
+            placeholder="Ex: +228 90 12 34 56"
+            value={school.phone || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, phone: e.target.value }))}
-            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
         </div>
 
