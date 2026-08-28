@@ -278,6 +278,8 @@ export function Step2EducationType({ school, setSchool }: { school: School; setS
 // ─────────────────────────────────────────────────────────────────────────────
 // ÉTAPE 3 : ANNÉE SCOLAIRE
 // ─────────────────────────────────────────────────────────────────────────────
+// ÉTAPE 3 : ANNÉE SCOLAIRE
+// ─────────────────────────────────────────────────────────────────────────────
 export function Step3AcademicYear({
   academicYear,
   setAcademicYear,
@@ -285,6 +287,26 @@ export function Step3AcademicYear({
   academicYear: AcademicYear;
   setAcademicYear: React.Dispatch<React.SetStateAction<AcademicYear>>;
 }) {
+  const isDummyName =
+    academicYear.name === "2025-2026" ||
+    academicYear.name === "2026-2027" ||
+    academicYear.name === "Année Scolaire 2025-2026";
+  const displayName = isDummyName ? "" : (academicYear.name || "");
+
+  const isDummyStart =
+    academicYear.start_date === "2025-09-15" ||
+    academicYear.start_date === "2026-09-15" ||
+    academicYear.start_date === "2025-09-01" ||
+    academicYear.start_date === "2026-09-01";
+  const displayStart = isDummyStart ? "" : (academicYear.start_date || "");
+
+  const isDummyEnd =
+    academicYear.end_date === "2026-06-30" ||
+    academicYear.end_date === "2027-06-30" ||
+    academicYear.end_date === "2026-07-31" ||
+    academicYear.end_date === "2027-07-31";
+  const displayEnd = isDummyEnd ? "" : (academicYear.end_date || "");
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="space-y-1">
@@ -306,7 +328,7 @@ export function Step3AcademicYear({
             <input
               type="text"
               placeholder="Ex: 2025-2026"
-              value={academicYear.name || ""}
+              value={displayName}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, name: e.target.value }))}
               required
               className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
@@ -321,7 +343,7 @@ export function Step3AcademicYear({
             </label>
             <input
               type="date"
-              value={academicYear.start_date}
+              value={displayStart}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, start_date: e.target.value }))}
               className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
             />
@@ -333,7 +355,7 @@ export function Step3AcademicYear({
             </label>
             <input
               type="date"
-              value={academicYear.end_date}
+              value={displayEnd}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, end_date: e.target.value }))}
               className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
             />
@@ -586,11 +608,7 @@ export function Step5TuitionPlans({
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || "default");
   const [annualAmount, setAnnualAmount] = useState<number>(0);
   const [installmentCount, setInstallmentCount] = useState<number>(3);
-  const [installments, setInstallments] = useState<TuitionInstallment[]>([
-    { id: "inst-1", tuition_plan_id: "plan-1", title: "1ère Tranche (Rentrée)", due_date: "2025-10-05", amount: 0, installment_order: 1 },
-    { id: "inst-2", tuition_plan_id: "plan-1", title: "2ème Tranche", due_date: "2026-01-10", amount: 0, installment_order: 2 },
-    { id: "inst-3", tuition_plan_id: "plan-1", title: "3ème Tranche (Solde)", due_date: "2026-04-10", amount: 0, installment_order: 3 },
-  ]);
+  const [installments, setInstallments] = useState<TuitionInstallment[]>([]);
 
   // Calculate sum of installments
   const totalInstallmentsSum = useMemo(() => {
@@ -598,7 +616,7 @@ export function Step5TuitionPlans({
   }, [installments]);
 
   const diff = totalInstallmentsSum - annualAmount;
-  const isMatch = annualAmount === 0 || Math.abs(diff) < 0.01;
+  const isMatch = (annualAmount === 0 && installments.length === 0) || (annualAmount > 0 && Math.abs(diff) < 0.01);
 
   // Inform parent about mathematical validity
   React.useEffect(() => {
@@ -609,6 +627,10 @@ export function Step5TuitionPlans({
 
   // Helper: auto split equal amounts
   const handleAutoSplit = (count: number, total: number) => {
+    if (total <= 0) {
+      setInstallments([]);
+      return;
+    }
     const base = Math.floor(total / count);
     const remainder = total - base * count;
 
@@ -622,7 +644,7 @@ export function Step5TuitionPlans({
         id: `inst-${i}`,
         tuition_plan_id: "plan-1",
         title: i === 1 ? "1ère Tranche (Rentrée)" : i === count ? `${i}ème Tranche (Solde)` : `${i}ème Tranche`,
-        due_date: dates[i - 1] || `2026-0${i}-10`,
+        due_date: dates[i - 1] || "",
         amount: amt,
         installment_order: i,
       });
@@ -633,7 +655,28 @@ export function Step5TuitionPlans({
 
   const handleInstallmentCountChange = (newCount: number) => {
     setInstallmentCount(newCount);
-    handleAutoSplit(newCount, annualAmount);
+    if (annualAmount > 0) {
+      handleAutoSplit(newCount, annualAmount);
+    }
+  };
+
+  const handleAddManualInstallment = () => {
+    const nextOrder = installments.length + 1;
+    setInstallments((prev) => [
+      ...prev,
+      {
+        id: `inst-${Date.now()}-${nextOrder}`,
+        tuition_plan_id: "plan-1",
+        title: nextOrder === 1 ? "1ère Tranche (Rentrée)" : `${nextOrder}ème Tranche`,
+        due_date: "",
+        amount: 0,
+        installment_order: nextOrder,
+      },
+    ]);
+  };
+
+  const handleRemoveInstallment = (id: string) => {
+    setInstallments((prev) => prev.filter((i) => i.id !== id));
   };
 
   const handleInstallmentAmountChange = (idx: number, newAmt: number) => {
@@ -645,7 +688,7 @@ export function Step5TuitionPlans({
   };
 
   const handleSaveCurrentPlan = () => {
-    if (!isMatch) return;
+    if (!isMatch || installments.length === 0) return;
 
     const targetClasses = selectedClassId === "all" ? classes : classes.filter((c) => c.id === selectedClassId);
 
@@ -659,7 +702,7 @@ export function Step5TuitionPlans({
           academic_year_id: "current",
           class_id: cls.id,
           class_name: cls.name,
-          total_amount: annualAmount,
+          total_amount: annualAmount || totalInstallmentsSum,
           installments: installments.map((inst, i) => ({
             ...inst,
             id: `inst-${cls.id}-${i + 1}`,
@@ -678,7 +721,7 @@ export function Step5TuitionPlans({
           Configurez vos frais de scolarité
         </h2>
         <p className="text-xs sm:text-sm text-slate-500">
-          Fixez le montant annuel et l&apos;échéancier des tranches de paiement avec calcul automatique garanti.
+          Fixez le montant annuel et l&apos;échéancier des tranches de paiement selon vos besoins.
         </p>
       </div>
 
@@ -705,7 +748,7 @@ export function Step5TuitionPlans({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Scolarité annuelle ({currency}) *
+              Scolarité annuelle ({currency})
             </label>
             <input
               type="number"
@@ -714,7 +757,11 @@ export function Step5TuitionPlans({
               onChange={(e) => {
                 const val = Number(e.target.value) || 0;
                 setAnnualAmount(val);
-                handleAutoSplit(installmentCount, val);
+                if (val > 0) {
+                  handleAutoSplit(installmentCount, val);
+                } else {
+                  setInstallments([]);
+                }
               }}
               min={1000}
               step={1000}
@@ -724,7 +771,7 @@ export function Step5TuitionPlans({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Nombre de tranches
+              Nombre de tranches par défaut
             </label>
             <select
               value={installmentCount}
@@ -743,115 +790,151 @@ export function Step5TuitionPlans({
         <div className="pt-2 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700">
-              Détail des échéances :
+              Détail des échéances ({installments.length}) :
             </span>
-            <button
-              type="button"
-              onClick={() => handleAutoSplit(installmentCount, annualAmount)}
-              className="text-[11px] text-blue-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
-            >
-              <Calculator className="w-3.5 h-3.5" />
-              <span>Répartir équitablement</span>
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {installments.map((inst, idx) => (
-              <div
-                key={inst.id}
-                className="grid grid-cols-1 sm:grid-cols-12 gap-2 p-2.5 bg-white border border-slate-200 rounded-xl text-xs items-center"
-              >
-                <div className="sm:col-span-5">
-                  <input
-                    type="text"
-                    value={inst.title}
-                    onChange={(e) => {
-                      const title = e.target.value;
-                      setInstallments((prev) => {
-                        const n = [...prev];
-                        n[idx] = { ...n[idx], title };
-                        return n;
-                      });
-                    }}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-900"
-                    placeholder={`Tranche ${idx + 1}`}
-                  />
-                </div>
-
-                <div className="sm:col-span-3">
-                  <input
-                    type="date"
-                    value={inst.due_date}
-                    onChange={(e) => {
-                      const due_date = e.target.value;
-                      setInstallments((prev) => {
-                        const n = [...prev];
-                        n[idx] = { ...n[idx], due_date };
-                        return n;
-                      });
-                    }}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs"
-                  />
-                </div>
-
-                <div className="sm:col-span-4 flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    value={inst.amount}
-                    onChange={(e) => handleInstallmentAmountChange(idx, Number(e.target.value) || 0)}
-                    min={0}
-                    step={500}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-extrabold text-slate-900 text-right"
-                  />
-                  <span className="text-slate-400 font-bold text-[11px] shrink-0">{currency}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Real-time Strict Mathematical Validation Notice */}
-        <div className="pt-2">
-          {diff > 0 ? (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2.5 animate-in fade-in">
-              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block font-bold">Erreur de totalisation :</strong>
-                <span>
-                  Le total des tranches ({totalInstallmentsSum.toLocaleString("fr-FR")} {currency}) dépasse la scolarité annuelle de{" "}
-                  <strong>{Math.abs(diff).toLocaleString("fr-FR")} {currency}</strong>.
-                </span>
-              </div>
-            </div>
-          ) : diff < 0 ? (
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs flex items-start gap-2.5 animate-in fade-in">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block font-bold">Montant incomplet :</strong>
-                <span>
-                  Le total des tranches ({totalInstallmentsSum.toLocaleString("fr-FR")} {currency}) est inférieur de{" "}
-                  <strong>{Math.abs(diff).toLocaleString("fr-FR")} {currency}</strong> au montant annuel attendu.
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between animate-in fade-in">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="font-bold">
-                  Total des tranches parfaitement équilibré : {totalInstallmentsSum.toLocaleString("fr-FR")} {currency}
-                </span>
-              </div>
+            <div className="flex items-center gap-3">
+              {annualAmount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleAutoSplit(installmentCount, annualAmount)}
+                  className="text-[11px] text-blue-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Calculator className="w-3.5 h-3.5" />
+                  <span>Répartir équitablement</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleSaveCurrentPlan}
-                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                onClick={handleAddManualInstallment}
+                className="text-[11px] text-blue-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
               >
-                Appliquer
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Ajouter une tranche</span>
               </button>
+            </div>
+          </div>
+
+          {installments.length === 0 ? (
+            <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-white space-y-1.5">
+              <Calculator className="w-5 h-5 text-slate-400 mx-auto mb-1" />
+              <p className="text-xs font-bold text-slate-700">Aucune tranche pré-remplie</p>
+              <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                Indiquez le montant annuel ci-dessus pour découper automatiquement vos tranches, ou ajoutez-les manuellement.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {installments.map((inst, idx) => (
+                <div
+                  key={inst.id}
+                  className="grid grid-cols-1 sm:grid-cols-12 gap-2 p-2.5 bg-white border border-slate-200 rounded-xl text-xs items-center"
+                >
+                  <div className="sm:col-span-5">
+                    <input
+                      type="text"
+                      value={inst.title}
+                      onChange={(e) => {
+                        const title = e.target.value;
+                        setInstallments((prev) => {
+                          const n = [...prev];
+                          n[idx] = { ...n[idx], title };
+                          return n;
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
+                      placeholder={`Ex: Tranche ${idx + 1}`}
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3">
+                    <input
+                      type="date"
+                      value={inst.due_date}
+                      onChange={(e) => {
+                        const due_date = e.target.value;
+                        setInstallments((prev) => {
+                          const n = [...prev];
+                          n[idx] = { ...n[idx], due_date };
+                          return n;
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3 flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      value={inst.amount === 0 ? "" : inst.amount}
+                      placeholder="Ex: 50 000"
+                      onChange={(e) => handleInstallmentAmountChange(idx, Number(e.target.value) || 0)}
+                      min={0}
+                      step={500}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-extrabold text-slate-900 text-right placeholder:text-slate-400 placeholder:font-normal"
+                    />
+                    <span className="text-slate-400 font-bold text-[11px] shrink-0">{currency}</span>
+                  </div>
+
+                  <div className="sm:col-span-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveInstallment(inst.id)}
+                      className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                      title="Supprimer cette tranche"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
+
+        {/* Real-time Strict Mathematical Validation Notice */}
+        {annualAmount > 0 && installments.length > 0 && (
+          <div className="pt-2">
+            {diff > 0 ? (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2.5 animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Erreur de totalisation :</strong>
+                  <span>
+                    Le total des tranches ({totalInstallmentsSum.toLocaleString("fr-FR")} {currency}) dépasse la scolarité annuelle de{" "}
+                    <strong>{Math.abs(diff).toLocaleString("fr-FR")} {currency}</strong>.
+                  </span>
+                </div>
+              </div>
+            ) : diff < 0 ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs flex items-start gap-2.5 animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Montant incomplet :</strong>
+                  <span>
+                    Le total des tranches ({totalInstallmentsSum.toLocaleString("fr-FR")} {currency}) est inférieur de{" "}
+                    <strong>{Math.abs(diff).toLocaleString("fr-FR")} {currency}</strong> au montant annuel attendu.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-bold">
+                    Total des tranches parfaitement équilibré : {totalInstallmentsSum.toLocaleString("fr-FR")} {currency}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentPlan}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                >
+                  Appliquer
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -139,13 +139,13 @@ export async function POST(req: NextRequest) {
         is_active: true,
       });
 
-      // Create Academic Year
+      // Create Academic Year (Initial Blank State)
       await supabase.from("academic_years").insert({
         id: yearId,
         school_id: schoolId,
-        name: "2025-2026",
-        start_date: "2025-09-15",
-        end_date: "2026-06-30",
+        name: "",
+        start_date: null,
+        end_date: null,
         is_current: true,
       });
 

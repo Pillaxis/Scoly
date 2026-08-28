@@ -23,7 +23,7 @@ import {
   Step8ImportData,
   Step9FinishSummary,
 } from "@/components/onboarding/OnboardingSteps";
-import { StaffRole, School } from "@/types/scoly";
+import { StaffRole, School, AcademicYear } from "@/types/scoly";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -92,8 +92,36 @@ export default function OnboardingPage() {
         country: storeSchool.country === "Togo" ? "" : (storeSchool.country || ""),
       };
       setLocalSchool(cleanSchool);
-      setLocalAcademicYear(storeAcademicYear);
-      setLocalClasses(storeClasses);
+
+      const cleanYear: AcademicYear = {
+        ...storeAcademicYear,
+        name:
+          storeAcademicYear.name === "2025-2026" ||
+          storeAcademicYear.name === "2026-2027" ||
+          storeAcademicYear.name === "Année Scolaire 2025-2026"
+            ? ""
+            : (storeAcademicYear.name || ""),
+        start_date:
+          storeAcademicYear.start_date === "2025-09-15" ||
+          storeAcademicYear.start_date === "2026-09-15" ||
+          storeAcademicYear.start_date === "2025-09-01"
+            ? ""
+            : (storeAcademicYear.start_date || ""),
+        end_date:
+          storeAcademicYear.end_date === "2026-06-30" ||
+          storeAcademicYear.end_date === "2027-06-30" ||
+          storeAcademicYear.end_date === "2027-07-31" ||
+          storeAcademicYear.end_date === "2026-07-31"
+            ? ""
+            : (storeAcademicYear.end_date || ""),
+      };
+      setLocalAcademicYear(cleanYear);
+
+      const isSeedClasses =
+        storeClasses.length > 0 &&
+        (storeClasses.some((c) => c.name === "CI" || c.name === "6ème A" || c.name === "2nde CD") ||
+          storeClasses.length === 13);
+      setLocalClasses(isSeedClasses && !storeSchool.onboarding_completed ? [] : storeClasses);
       setLocalTuitionPlans(storeTuitionPlans);
 
       // Resume from saved step if valid
