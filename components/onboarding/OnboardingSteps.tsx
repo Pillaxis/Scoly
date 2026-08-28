@@ -376,6 +376,17 @@ const LEVEL_PRESETS: Record<
   },
 };
 
+const generateSafeId = (prefix = "cls") => {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+    }
+  } catch {
+    // fallback
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
+};
+
 export function Step4Classes({
   classes,
   setClasses,
@@ -390,6 +401,9 @@ export function Step4Classes({
   const [customClassLevel, setCustomClassLevel] = useState<string>("Lycée");
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
   const [editingClassName, setEditingClassName] = useState<string>("");
+  const [customInputError, setCustomInputError] = useState<string | null>(null);
+  const [addedSuccessMsg, setAddedSuccessMsg] = useState<string | null>(null);
+  const customInputRef = React.useRef<HTMLInputElement>(null);
 
   // Synchronize customClassLevel with activeLevel when user clicks tabs
   const handleSelectLevelTab = (levelKey: string) => {
@@ -407,8 +421,8 @@ export function Step4Classes({
     } else {
       // Add class
       const newCls: SchoolClass = {
-        id: "cls-" + crypto.randomUUID().slice(0, 8),
-        school_id: school.id,
+        id: generateSafeId("cls"),
+        school_id: school?.id || "school-current",
         academic_year_id: "current",
         name: className,
         level: level,
@@ -426,8 +440,8 @@ export function Step4Classes({
     preset.classes.forEach((name) => {
       if (!classes.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
         toAdd.push({
-          id: "cls-" + crypto.randomUUID().slice(0, 8),
-          school_id: school.id,
+          id: generateSafeId("cls"),
+          school_id: school?.id || "school-current",
           academic_year_id: "current",
           name,
           level: activeLevel,
@@ -438,16 +452,24 @@ export function Step4Classes({
 
     if (toAdd.length > 0) {
       setClasses((prev) => [...prev, ...toAdd]);
+      setAddedSuccessMsg(`✓ ${toAdd.length} classes du ${preset.label} ajoutées !`);
+      setTimeout(() => setAddedSuccessMsg(null), 3000);
     }
   };
 
-  const handleAddCustomClass = (e?: React.FormEvent) => {
+  const handleAddCustomClass = (e?: React.FormEvent | React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
     const raw = customClassName.trim();
-    if (!raw) return;
+    if (!raw) {
+      setCustomInputError("Veuillez saisir le nom de la classe ci-dessous");
+      customInputRef.current?.focus();
+      return;
+    }
+
+    setCustomInputError(null);
 
     // Split by comma or semicolon in case user entered multiple classes (e.g. "Seconde S, Seconde D, Seconde A")
     const names = raw
@@ -455,10 +477,14 @@ export function Step4Classes({
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
-    if (names.length === 0) return;
+    if (names.length === 0) {
+      setCustomInputError("Veuillez saisir un nom valide");
+      customInputRef.current?.focus();
+      return;
+    }
 
     const newClasses: SchoolClass[] = names.map((name, idx) => ({
-      id: "cls-" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36) + idx),
+      id: generateSafeId("cls"),
       school_id: school?.id || "school-current",
       academic_year_id: "current",
       name: name,
@@ -469,6 +495,11 @@ export function Step4Classes({
 
     setClasses((prev) => [...prev, ...newClasses]);
     setCustomClassName("");
+    setAddedSuccessMsg(
+      `✓ ${newClasses.length > 1 ? `${newClasses.length} classes ajoutées` : `Classe « ${newClasses[0].name} » ajoutée`} avec succès !`
+    );
+    setTimeout(() => setAddedSuccessMsg(null), 3500);
+    customInputRef.current?.focus();
   };
 
   const handleStartEdit = (cls: SchoolClass) => {
@@ -500,8 +531,8 @@ export function Step4Classes({
     const suggestedName = `${baseName} ${suffix}`;
 
     const newCls: SchoolClass = {
-      id: "cls-" + crypto.randomUUID().slice(0, 8),
-      school_id: school.id,
+      id: generateSafeId("cls"),
+      school_id: school?.id || "school-current",
       academic_year_id: "current",
       name: suggestedName,
       level: cls.level,
@@ -632,24 +663,39 @@ export function Step4Classes({
           }}
           className="flex flex-col sm:flex-row gap-2"
         >
-          <input
-            type="text"
-            placeholder="Ex: Seconde S, Seconde D, Terminale A4..."
-            value={customClassName}
-            onChange={(e) => setCustomClassName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAddCustomClass();
-              }
-            }}
-            className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all"
-          />
+          <div className="flex-1 relative">
+            <input
+              ref={customInputRef}
+              type="text"
+              placeholder="Ex: Seconde S, Seconde D, Terminale A4..."
+              value={customClassName}
+              onChange={(e) => {
+                setCustomClassName(e.target.value);
+                if (customInputError) setCustomInputError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAddCustomClass(e);
+                }
+              }}
+              className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 transition-all ${
+                customInputError
+                  ? "border-rose-400 focus:ring-rose-500 bg-rose-50/30"
+                  : "border-slate-200 focus:ring-blue-600"
+              }`}
+            />
+            {customInputError && (
+              <p className="text-[11px] text-rose-600 font-semibold mt-1">
+                {customInputError}
+              </p>
+            )}
+          </div>
           <div className="flex gap-2">
             <select
               value={customClassLevel}
               onChange={(e) => setCustomClassLevel(e.target.value)}
-              className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all"
+              className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all cursor-pointer"
             >
               <option value="Lycée">Lycée</option>
               <option value="Collège">Collège</option>
@@ -661,15 +707,22 @@ export function Step4Classes({
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                handleAddCustomClass();
+                handleAddCustomClass(e);
               }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-md shadow-blue-600/20"
             >
               <Plus className="w-4 h-4" />
               <span>Ajouter</span>
             </button>
           </div>
         </form>
+
+        {addedSuccessMsg && (
+          <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-150">
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{addedSuccessMsg}</span>
+          </div>
+        )}
       </div>
 
       {/* Configured Classes List */}
