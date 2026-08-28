@@ -47,6 +47,29 @@ interface StepProps {
 // ÉTAPE 1 : MON ÉTABLISSEMENT
 // ─────────────────────────────────────────────────────────────────────────────
 export function Step1SchoolInfo({ school, setSchool }: { school: School; setSchool: React.Dispatch<React.SetStateAction<School>> }) {
+  // Purge any dummy fallback values from old sessions so fields start completely blank
+  const isDummyName = school.name === "Mon Établissement Scolaire" || school.name === "Complexe Scolaire Lumière d'Afrique";
+  const displayName = isDummyName ? "" : (school.name || "");
+
+  const isDummyPhone =
+    !school.phone ||
+    school.phone === "+228 90 00 00 00" ||
+    school.phone.startsWith("+228 90 00") ||
+    school.phone === "+228 90 12 34 56";
+  const displayPhone = isDummyPhone ? "" : school.phone;
+
+  const isDummyAddress =
+    school.address === "Quartier Administratif" ||
+    school.address === "Boulevard du 13 Janvier, Quartier Administratif" ||
+    school.address === "Rue des Écoles, Quartier Administratif";
+  const displayAddress = isDummyAddress ? "" : (school.address || "");
+
+  const isDummyCity = school.city === "Lomé";
+  const displayCity = isDummyCity ? "" : (school.city || "");
+
+  const isDummyCountry = school.country === "Togo";
+  const displayCountry = isDummyCountry ? "" : (school.country || "");
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="space-y-1">
@@ -69,10 +92,10 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
             <input
               type="text"
               placeholder="Ex: Complexe Scolaire Lumière d'Afrique"
-              value={school.name}
+              value={displayName}
               onChange={(e) => setSchool((prev) => ({ ...prev, name: e.target.value }))}
               required
-              className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+              className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
             />
           </div>
         </div>
@@ -85,14 +108,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="tel"
             placeholder="Ex: +228 90 12 34 56"
-            value={
-              !school.phone ||
-              school.phone === "+228 90 00 00 00" ||
-              school.phone.startsWith("+228 90 00") ||
-              school.phone === "+228 90 12 34 56"
-                ? ""
-                : school.phone
-            }
+            value={displayPhone}
             onChange={(e) => setSchool((prev) => ({ ...prev, phone: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -105,14 +121,14 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           </label>
           <input
             type="email"
-            placeholder="direction@mon-ecole.tg"
+            placeholder="Ex: direction@mon-ecole.tg"
             value={school.email || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, email: e.target.value }))}
-            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
         </div>
 
-        {/* Adresse */}
+        {/* Adresse / Quartier */}
         <div className="sm:col-span-2">
           <label className="block font-bold text-slate-700 mb-1.5">
             Adresse / Quartier
@@ -120,9 +136,9 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="text"
             placeholder="Ex: Boulevard du 13 Janvier, Quartier Administratif"
-            value={school.address}
+            value={displayAddress}
             onChange={(e) => setSchool((prev) => ({ ...prev, address: e.target.value }))}
-            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
         </div>
 
@@ -134,7 +150,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="text"
             placeholder="Ex: Lomé"
-            value={school.city || ""}
+            value={displayCity}
             onChange={(e) => setSchool((prev) => ({ ...prev, city: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -147,7 +163,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="text"
             placeholder="Ex: Togo"
-            value={school.country || ""}
+            value={displayCountry}
             onChange={(e) => setSchool((prev) => ({ ...prev, country: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -169,10 +185,10 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
             </div>
             <input
               type="url"
-              placeholder="Lien URL vers votre logo (ex: https://...)"
+              placeholder="Ex: https://monsite.com/logo.png"
               value={school.logo_url || ""}
               onChange={(e) => setSchool((prev) => ({ ...prev, logo_url: e.target.value }))}
-              className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-normal text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+              className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-normal text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
             />
           </div>
         </div>
@@ -1222,10 +1238,10 @@ export function Step9FinishSummary({
             Établissement
           </span>
           <strong className="text-sm font-extrabold text-slate-900 block truncate">
-            {school.name || "Mon Établissement"}
+            {school.name || "Établissement scolaire"}
           </strong>
           <p className="text-slate-500 text-[11px]">
-            {school.city || "Lomé"}, {school.country || "Togo"} • Devise : {school.currency || "FCFA"}
+            {[school.address, school.city, school.country].filter(Boolean).join(", ") || "Localisation non précisée"} • Devise : {school.currency || "FCFA"}
           </p>
         </div>
 
@@ -1235,10 +1251,12 @@ export function Step9FinishSummary({
             Année Scolaire Active
           </span>
           <strong className="text-sm font-extrabold text-slate-900 block">
-            {academicYear.name || "2025-2026"}
+            {academicYear.name || "Année en cours"}
           </strong>
           <p className="text-slate-500 text-[11px]">
-            Du {academicYear.start_date || "2025-09-15"} au {academicYear.end_date || "2026-06-30"}
+            {academicYear.start_date && academicYear.end_date
+              ? `Du ${academicYear.start_date} au ${academicYear.end_date}`
+              : "Calendrier académique"}
           </p>
         </div>
 

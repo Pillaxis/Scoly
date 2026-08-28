@@ -71,6 +71,10 @@ export default function OnboardingPage() {
 
       const cleanSchool: School = {
         ...storeSchool,
+        name:
+          storeSchool.name === "Mon Établissement Scolaire" || storeSchool.name === "Complexe Scolaire Lumière d'Afrique"
+            ? ""
+            : (storeSchool.name || ""),
         phone:
           !storeSchool.phone ||
           storeSchool.phone === "+228 90 00 00 00" ||
@@ -78,6 +82,14 @@ export default function OnboardingPage() {
           storeSchool.phone === "+228 90 12 34 56"
             ? ""
             : storeSchool.phone,
+        address:
+          storeSchool.address === "Quartier Administratif" ||
+          storeSchool.address === "Boulevard du 13 Janvier, Quartier Administratif" ||
+          storeSchool.address === "Rue des Écoles, Quartier Administratif"
+            ? ""
+            : (storeSchool.address || ""),
+        city: storeSchool.city === "Lomé" ? "" : (storeSchool.city || ""),
+        country: storeSchool.country === "Togo" ? "" : (storeSchool.country || ""),
       };
       setLocalSchool(cleanSchool);
       setLocalAcademicYear(storeAcademicYear);

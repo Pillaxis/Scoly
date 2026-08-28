@@ -52,21 +52,21 @@ export default function SettingsPage() {
     syncLocalToSupabase,
   } = useScoly();
 
-  // Form State: Starts empty if no custom school info exists
-  const [name, setName] = useState(school.name || "");
-  const [code, setCode] = useState(school.code || "");
-  const [phone, setPhone] = useState(school.phone || "");
-  const [email, setEmail] = useState(school.email || "");
-  const [address, setAddress] = useState(school.address || "");
-  const [city, setCity] = useState(school.city || "");
-  const [country, setCountry] = useState(school.country || "");
-  const [receiptPrefix, setReceiptPrefix] = useState(school.receipt_prefix || "");
-  const [currency, setCurrency] = useState(school.currency || "FCFA");
+  // Form State: Starts 100% clean and empty by default
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
+  const [receiptPrefix, setReceiptPrefix] = useState("");
+  const [currency, setCurrency] = useState("FCFA");
 
-  // Academic Year State (100% Personnalisable)
-  const [yearName, setYearName] = useState(academicYear.name || "2025-2026");
-  const [yearStartDate, setYearStartDate] = useState(academicYear.start_date || "2025-09-15");
-  const [yearEndDate, setYearEndDate] = useState(academicYear.end_date || "2026-06-30");
+  // Academic Year State
+  const [yearName, setYearName] = useState("");
+  const [yearStartDate, setYearStartDate] = useState("");
+  const [yearEndDate, setYearEndDate] = useState("");
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -86,20 +86,35 @@ export default function SettingsPage() {
   const [editingMethodKey, setEditingMethodKey] = useState<string | null>(null);
   const [editingMethodLabel, setEditingMethodLabel] = useState("");
 
-  // Sync state when store updates
+  // Sync state when store updates, purging any dummy values from legacy sessions
   useEffect(() => {
-    setName(school.name || "");
-    setCode(school.code || "");
-    setPhone(school.phone || "");
+    const isDummyName = school.name === "Mon Établissement Scolaire" || school.name === "Complexe Scolaire Lumière d'Afrique";
+    setName(isDummyName ? "" : (school.name || ""));
+    setCode(school.code === "ECOLE-001" ? "" : (school.code || ""));
+
+    const isDummyPhone =
+      !school.phone ||
+      school.phone === "+228 90 00 00 00" ||
+      school.phone.startsWith("+228 90 00") ||
+      school.phone === "+228 90 12 34 56";
+    setPhone(isDummyPhone ? "" : school.phone);
+
     setEmail(school.email || "");
-    setAddress(school.address || "");
-    setCity(school.city || "");
-    setCountry(school.country || "");
+
+    const isDummyAddress =
+      school.address === "Quartier Administratif" ||
+      school.address === "Boulevard du 13 Janvier, Quartier Administratif" ||
+      school.address === "Rue des Écoles, Quartier Administratif";
+    setAddress(isDummyAddress ? "" : (school.address || ""));
+
+    setCity(school.city === "Lomé" ? "" : (school.city || ""));
+    setCountry(school.country === "Togo" ? "" : (school.country || ""));
     setReceiptPrefix(school.receipt_prefix || "");
     setCurrency(school.currency || "FCFA");
-    setYearName(academicYear.name || "2025-2026");
-    setYearStartDate(academicYear.start_date || "2025-09-15");
-    setYearEndDate(academicYear.end_date || "2026-06-30");
+
+    setYearName(academicYear.name || "");
+    setYearStartDate(academicYear.start_date || "");
+    setYearEndDate(academicYear.end_date || "");
   }, [school, academicYear]);
 
   const handleSubmit = (e: React.FormEvent) => {
