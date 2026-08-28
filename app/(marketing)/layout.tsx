@@ -30,7 +30,8 @@ export default function MarketingLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col bg-white text-slate-900 selection:bg-teal-600 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-white text-slate-900 selection:bg-blue-600 selection:text-white">
+
       <LandingNavbar />
       <main className="flex-1">{children}</main>
       <LandingFooter />

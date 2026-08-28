@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowRight, Menu, X, Globe, Sparkles, LogIn, LayoutDashboard } from "lucide-react";
+import { ArrowRight, Menu, X, Globe, LogIn, LayoutDashboard } from "lucide-react";
 import { useScoly } from "@/lib/store";
 
 export function LandingNavbar() {
@@ -36,13 +36,13 @@ export function LandingNavbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
         {/* Brand Logo */}
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-teal-600 via-emerald-600 to-teal-500 flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-md shadow-teal-600/20 group-hover:scale-105 transition-transform">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
             S
           </div>
           <div className="flex flex-col">
             <span className="font-black text-slate-950 text-lg sm:text-xl tracking-tight leading-none flex items-center gap-1">
               SCOLY
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" />
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
             </span>
             <span className="text-[10px] text-slate-400 font-medium tracking-tight">
               Gestion scolaire simplifiée
@@ -56,10 +56,10 @@ export function LandingNavbar() {
             <a
               key={link.href}
               href={link.href}
-              className="hover:text-teal-600 transition-colors py-1 relative group"
+              className="hover:text-blue-600 transition-colors py-1 relative group"
             >
               {link.label}
-              <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-teal-600 rounded-full transition-all duration-200 group-hover:w-full" />
+              <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-blue-600 rounded-full transition-all duration-200 group-hover:w-full" />
             </a>
           ))}
         </nav>
@@ -75,7 +75,7 @@ export function LandingNavbar() {
           {currentUser ? (
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-teal-600 hover:bg-teal-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-teal-600/20 transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
             >
               <LayoutDashboard className="w-4 h-4" />
               <span>Mon Espace</span>
@@ -85,14 +85,14 @@ export function LandingNavbar() {
             <>
               <Link
                 href="/login"
-                className="text-xs sm:text-sm font-bold text-slate-700 hover:text-teal-700 px-3 py-2 transition-colors cursor-pointer"
+                className="text-xs sm:text-sm font-bold text-slate-700 hover:text-blue-700 px-3 py-2 transition-colors cursor-pointer"
               >
                 Connexion
               </Link>
 
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-teal-600 hover:bg-teal-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-teal-600/20 transition-all hover:shadow-lg hover:shadow-teal-600/30 cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition-all hover:shadow-lg hover:shadow-blue-600/30 cursor-pointer"
               >
                 <span>Commencer</span>
                 <ArrowRight className="w-4 h-4" />
@@ -106,7 +106,7 @@ export function LandingNavbar() {
           {currentUser ? (
             <Link
               href="/dashboard"
-              className="px-3 py-1.5 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center gap-1"
+              className="px-3 py-1.5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center gap-1"
             >
               <span>Espace</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -114,7 +114,7 @@ export function LandingNavbar() {
           ) : (
             <Link
               href="/register"
-              className="px-3.5 py-1.5 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center gap-1"
+              className="px-3.5 py-1.5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center gap-1"
             >
               <span>Essai 15j</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -141,7 +141,7 @@ export function LandingNavbar() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="text-sm font-semibold text-slate-800 hover:text-teal-600 py-1.5 px-2 rounded-lg hover:bg-slate-50"
+                className="text-sm font-semibold text-slate-800 hover:text-blue-600 py-1.5 px-2 rounded-lg hover:bg-slate-50"
               >
                 {link.label}
               </a>
@@ -153,7 +153,7 @@ export function LandingNavbar() {
               <Link
                 href="/dashboard"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-teal-600 text-white font-bold text-sm shadow-md"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md"
               >
                 <LayoutDashboard className="w-4 h-4" />
                 <span>Accéder à mon tableau de bord</span>
@@ -172,7 +172,7 @@ export function LandingNavbar() {
                 <Link
                   href="/register"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-teal-600 text-white font-bold text-sm shadow-md shadow-teal-600/25"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md shadow-blue-600/25"
                 >
                   <span>Créer mon espace (15 jours gratuits)</span>
                   <ArrowRight className="w-4 h-4" />
