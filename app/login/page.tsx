@@ -27,17 +27,6 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Auto redirect if already logged in
-  useEffect(() => {
-    if (isLoaded && currentUser) {
-      if (school.onboarding_completed === false) {
-        router.push("/onboarding");
-      } else {
-        router.push("/dashboard");
-      }
-    }
-  }, [isLoaded, currentUser, school.onboarding_completed, router]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);

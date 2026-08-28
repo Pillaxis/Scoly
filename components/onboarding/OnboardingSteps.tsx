@@ -47,29 +47,6 @@ interface StepProps {
 // ÉTAPE 1 : MON ÉTABLISSEMENT
 // ─────────────────────────────────────────────────────────────────────────────
 export function Step1SchoolInfo({ school, setSchool }: { school: School; setSchool: React.Dispatch<React.SetStateAction<School>> }) {
-  // Purge any dummy fallback values from old sessions so fields start completely blank
-  const isDummyName = school.name === "Mon Établissement Scolaire" || school.name === "Complexe Scolaire Lumière d'Afrique";
-  const displayName = isDummyName ? "" : (school.name || "");
-
-  const isDummyPhone =
-    !school.phone ||
-    school.phone === "+228 90 00 00 00" ||
-    school.phone.startsWith("+228 90 00") ||
-    school.phone === "+228 90 12 34 56";
-  const displayPhone = isDummyPhone ? "" : school.phone;
-
-  const isDummyAddress =
-    school.address === "Quartier Administratif" ||
-    school.address === "Boulevard du 13 Janvier, Quartier Administratif" ||
-    school.address === "Rue des Écoles, Quartier Administratif";
-  const displayAddress = isDummyAddress ? "" : (school.address || "");
-
-  const isDummyCity = school.city === "Lomé";
-  const displayCity = isDummyCity ? "" : (school.city || "");
-
-  const isDummyCountry = school.country === "Togo";
-  const displayCountry = isDummyCountry ? "" : (school.country || "");
-
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="space-y-1">
@@ -92,7 +69,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
             <input
               type="text"
               placeholder="Ex: Complexe Scolaire Lumière d'Afrique"
-              value={displayName}
+              value={school.name || ""}
               onChange={(e) => setSchool((prev) => ({ ...prev, name: e.target.value }))}
               required
               className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
@@ -108,7 +85,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="tel"
             placeholder="Ex: +228 90 12 34 56"
-            value={displayPhone}
+            value={school.phone || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, phone: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -136,7 +113,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="text"
             placeholder="Ex: Boulevard du 13 Janvier, Quartier Administratif"
-            value={displayAddress}
+            value={school.address || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, address: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -150,7 +127,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="text"
             placeholder="Ex: Lomé"
-            value={displayCity}
+            value={school.city || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, city: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -163,7 +140,7 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="text"
             placeholder="Ex: Togo"
-            value={displayCountry}
+            value={school.country || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, country: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
@@ -259,13 +236,11 @@ export function Step2EducationType({ school, setSchool }: { school: School; setS
               </div>
 
               <div
-                className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 border transition-all ${
-                  isSelected
-                    ? "bg-blue-600 border-blue-600 text-white"
-                    : "border-slate-300 bg-white"
+                className={`w-5 h-5 rounded-lg flex items-center justify-center transition-all ${
+                  isSelected ? "bg-blue-600 text-white" : "border border-slate-300 bg-white"
                 }`}
               >
-                {isSelected && <Check className="w-3.5 h-3.5" />}
+                {isSelected && <Check className="w-3 h-3" />}
               </div>
             </button>
           );
@@ -278,8 +253,6 @@ export function Step2EducationType({ school, setSchool }: { school: School; setS
 // ─────────────────────────────────────────────────────────────────────────────
 // ÉTAPE 3 : ANNÉE SCOLAIRE
 // ─────────────────────────────────────────────────────────────────────────────
-// ÉTAPE 3 : ANNÉE SCOLAIRE
-// ─────────────────────────────────────────────────────────────────────────────
 export function Step3AcademicYear({
   academicYear,
   setAcademicYear,
@@ -287,26 +260,6 @@ export function Step3AcademicYear({
   academicYear: AcademicYear;
   setAcademicYear: React.Dispatch<React.SetStateAction<AcademicYear>>;
 }) {
-  const isDummyName =
-    academicYear.name === "2025-2026" ||
-    academicYear.name === "2026-2027" ||
-    academicYear.name === "Année Scolaire 2025-2026";
-  const displayName = isDummyName ? "" : (academicYear.name || "");
-
-  const isDummyStart =
-    academicYear.start_date === "2025-09-15" ||
-    academicYear.start_date === "2026-09-15" ||
-    academicYear.start_date === "2025-09-01" ||
-    academicYear.start_date === "2026-09-01";
-  const displayStart = isDummyStart ? "" : (academicYear.start_date || "");
-
-  const isDummyEnd =
-    academicYear.end_date === "2026-06-30" ||
-    academicYear.end_date === "2027-06-30" ||
-    academicYear.end_date === "2026-07-31" ||
-    academicYear.end_date === "2027-07-31";
-  const displayEnd = isDummyEnd ? "" : (academicYear.end_date || "");
-
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="space-y-1">
@@ -328,7 +281,7 @@ export function Step3AcademicYear({
             <input
               type="text"
               placeholder="Ex: 2025-2026"
-              value={displayName}
+              value={academicYear.name || ""}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, name: e.target.value }))}
               required
               className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
@@ -343,7 +296,7 @@ export function Step3AcademicYear({
             </label>
             <input
               type="date"
-              value={displayStart}
+              value={academicYear.start_date || ""}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, start_date: e.target.value }))}
               className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
             />
@@ -355,7 +308,7 @@ export function Step3AcademicYear({
             </label>
             <input
               type="date"
-              value={displayEnd}
+              value={academicYear.end_date || ""}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, end_date: e.target.value }))}
               className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
             />

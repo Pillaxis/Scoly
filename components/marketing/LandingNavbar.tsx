@@ -72,33 +72,30 @@ export function LandingNavbar() {
             <span>FR</span>
           </div>
 
-          {currentUser ? (
+          {currentUser && (
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-200 transition-all cursor-pointer"
             >
-              <LayoutDashboard className="w-4 h-4" />
+              <LayoutDashboard className="w-3.5 h-3.5" />
               <span>Mon Espace</span>
-              <ArrowRight className="w-4 h-4" />
             </Link>
-          ) : (
-            <>
-              <Link
-                href="/login"
-                className="text-xs sm:text-sm font-bold text-slate-700 hover:text-blue-700 px-3 py-2 transition-colors cursor-pointer"
-              >
-                Connexion
-              </Link>
-
-              <Link
-                href="/register"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition-all hover:shadow-lg hover:shadow-blue-600/30 cursor-pointer"
-              >
-                <span>Commencer</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </>
           )}
+
+          <Link
+            href="/login"
+            className="text-xs sm:text-sm font-bold text-slate-700 hover:text-blue-700 px-3 py-2 transition-colors cursor-pointer"
+          >
+            Connexion
+          </Link>
+
+          <Link
+            href="/register"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition-all hover:shadow-lg hover:shadow-blue-600/30 cursor-pointer"
+          >
+            <span>Commencer</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
 
         {/* Mobile Menu Button */}
@@ -149,36 +146,34 @@ export function LandingNavbar() {
           </nav>
 
           <div className="pt-3 border-t border-slate-100 flex flex-col gap-2.5">
-            {currentUser ? (
+            {currentUser && (
               <Link
                 href="/dashboard"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-100 text-slate-900 font-bold text-sm border border-slate-200"
               >
                 <LayoutDashboard className="w-4 h-4" />
-                <span>Accéder à mon tableau de bord</span>
+                <span>Mon Espace (Tableau de bord)</span>
               </Link>
-            ) : (
-              <>
-                <Link
-                  href="/login"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full flex items-center justify-center py-2.5 rounded-xl border border-slate-300 text-slate-800 font-bold text-sm hover:bg-slate-50"
-                >
-                  <LogIn className="w-4 h-4 mr-2" />
-                  <span>Connexion à mon école</span>
-                </Link>
-
-                <Link
-                  href="/register"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md shadow-blue-600/25"
-                >
-                  <span>Créer mon espace (15 jours gratuits)</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </>
             )}
+
+            <Link
+              href="/login"
+              onClick={() => setMobileMenuOpen(false)}
+              className="w-full flex items-center justify-center py-2.5 rounded-xl border border-slate-300 text-slate-800 font-bold text-sm hover:bg-slate-50"
+            >
+              <LogIn className="w-4 h-4 mr-2" />
+              <span>Connexion à mon école</span>
+            </Link>
+
+            <Link
+              href="/register"
+              onClick={() => setMobileMenuOpen(false)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md shadow-blue-600/25"
+            >
+              <span>Créer mon espace (15 jours gratuits)</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
       )}
