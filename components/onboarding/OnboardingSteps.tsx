@@ -847,10 +847,73 @@ export function Step5TuitionPlans({
   currency?: string;
   onValidityChange?: (isValid: boolean) => void;
 }) {
-  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || "default");
+  const initialClassId = classes[0]?.id || "all";
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId);
   const [annualAmount, setAnnualAmount] = useState<number>(0);
   const [installmentCount, setInstallmentCount] = useState<number>(3);
   const [installments, setInstallments] = useState<TuitionInstallment[]>([]);
+  const [savedSuccessAlert, setSavedSuccessAlert] = useState<string | null>(null);
+
+  // Load existing plan when selectedClassId changes
+  const handleSelectClass = (newId: string) => {
+    // 1. If currently configured plan is valid, persist it first before switching
+    if (isMatch && installments.length > 0 && annualAmount > 0) {
+      persistPlanForClass(selectedClassId, annualAmount, installments);
+    }
+
+    setSelectedClassId(newId);
+
+    // 2. Load plan for the new class
+    const existing = tuitionPlans.find(
+      (p) => (newId === "all" ? p.class_id === "all" : p.class_id === newId)
+    );
+
+    if (existing && existing.total_amount > 0) {
+      setAnnualAmount(existing.total_amount);
+      setInstallments(existing.installments || []);
+      setInstallmentCount(existing.installments?.length || 3);
+    } else {
+      // Empty slate for new class
+      setAnnualAmount(0);
+      setInstallments([]);
+      setInstallmentCount(3);
+    }
+  };
+
+  // Helper to persist plan into tuitionPlans state
+  const persistPlanForClass = (
+    classId: string,
+    amount: number,
+    insts: TuitionInstallment[]
+  ) => {
+    const targetClasses =
+      classId === "all"
+        ? classes
+        : classes.filter((c) => c.id === classId);
+
+    if (targetClasses.length === 0) return;
+
+    setTuitionPlans((prev) => {
+      let next = [...prev];
+      targetClasses.forEach((cls) => {
+        next = next.filter((p) => p.class_id !== cls.id);
+        next.push({
+          id: "plan-" + cls.id,
+          school_id: cls.school_id,
+          academic_year_id: "current",
+          class_id: cls.id,
+          class_name: cls.name,
+          total_amount: amount,
+          installments: insts.map((inst, i) => ({
+            ...inst,
+            id: `inst-${cls.id}-${i + 1}`,
+            tuition_plan_id: "plan-" + cls.id,
+          })),
+        });
+      });
+      return next;
+    });
+  };
 
   // Calculate sum of installments
   const totalInstallmentsSum = useMemo(() => {
@@ -858,7 +921,9 @@ export function Step5TuitionPlans({
   }, [installments]);
 
   const diff = totalInstallmentsSum - annualAmount;
-  const isMatch = (annualAmount === 0 && installments.length === 0) || (annualAmount > 0 && Math.abs(diff) < 0.01);
+  const isMatch =
+    (annualAmount === 0 && installments.length === 0) ||
+    (annualAmount > 0 && Math.abs(diff) < 0.01);
 
   // Inform parent about mathematical validity
   React.useEffect(() => {
@@ -883,9 +948,14 @@ export function Step5TuitionPlans({
       const isFirst = i === 1;
       const amt = isFirst ? base + remainder : base;
       nextInst.push({
-        id: `inst-${i}`,
-        tuition_plan_id: "plan-1",
-        title: i === 1 ? "1ère Tranche (Rentrée)" : i === count ? `${i}ème Tranche (Solde)` : `${i}ème Tranche`,
+        id: `inst-${Date.now()}-${i}`,
+        tuition_plan_id: "plan-current",
+        title:
+          i === 1
+            ? "1ère Tranche (Rentrée)"
+            : i === count
+            ? `${i}ème Tranche (Solde)`
+            : `${i}ème Tranche`,
         due_date: dates[i - 1] || "",
         amount: amt,
         installment_order: i,
@@ -893,6 +963,9 @@ export function Step5TuitionPlans({
     }
 
     setInstallments(nextInst);
+    if (total > 0) {
+      persistPlanForClass(selectedClassId, total, nextInst);
+    }
   };
 
   const handleInstallmentCountChange = (newCount: number) => {
@@ -904,57 +977,56 @@ export function Step5TuitionPlans({
 
   const handleAddManualInstallment = () => {
     const nextOrder = installments.length + 1;
-    setInstallments((prev) => [
-      ...prev,
+    const newInsts: TuitionInstallment[] = [
+      ...installments,
       {
         id: `inst-${Date.now()}-${nextOrder}`,
-        tuition_plan_id: "plan-1",
+        tuition_plan_id: "plan-current",
         title: nextOrder === 1 ? "1ère Tranche (Rentrée)" : `${nextOrder}ème Tranche`,
         due_date: "",
         amount: 0,
         installment_order: nextOrder,
       },
-    ]);
+    ];
+    setInstallments(newInsts);
   };
 
   const handleRemoveInstallment = (id: string) => {
-    setInstallments((prev) => prev.filter((i) => i.id !== id));
+    const nextInsts = installments.filter((i) => i.id !== id);
+    setInstallments(nextInsts);
+    if (annualAmount > 0 && Math.abs(nextInsts.reduce((a, b) => a + Number(b.amount || 0), 0) - annualAmount) < 0.01) {
+      persistPlanForClass(selectedClassId, annualAmount, nextInsts);
+    }
   };
 
   const handleInstallmentAmountChange = (idx: number, newAmt: number) => {
-    setInstallments((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], amount: newAmt };
-      return next;
-    });
+    const next = [...installments];
+    next[idx] = { ...next[idx], amount: newAmt };
+    setInstallments(next);
+
+    const sum = next.reduce((a, b) => a + Number(b.amount || 0), 0);
+    if (annualAmount > 0 && Math.abs(sum - annualAmount) < 0.01) {
+      persistPlanForClass(selectedClassId, annualAmount, next);
+    }
   };
 
   const handleSaveCurrentPlan = () => {
-    if (!isMatch || installments.length === 0) return;
+    if (!isMatch || installments.length === 0 || annualAmount <= 0) return;
 
-    const targetClasses = selectedClassId === "all" ? classes : classes.filter((c) => c.id === selectedClassId);
+    persistPlanForClass(selectedClassId, annualAmount, installments);
 
-    setTuitionPlans((prev) => {
-      let next = [...prev];
-      targetClasses.forEach((cls) => {
-        next = next.filter((p) => p.class_id !== cls.id);
-        next.push({
-          id: "plan-" + cls.id,
-          school_id: cls.school_id,
-          academic_year_id: "current",
-          class_id: cls.id,
-          class_name: cls.name,
-          total_amount: annualAmount || totalInstallmentsSum,
-          installments: installments.map((inst, i) => ({
-            ...inst,
-            id: `inst-${cls.id}-${i + 1}`,
-            tuition_plan_id: "plan-" + cls.id,
-          })),
-        });
-      });
-      return next;
-    });
+    const currentName =
+      selectedClassId === "all"
+        ? "toutes les classes"
+        : classes.find((c) => c.id === selectedClassId)?.name || "la classe";
+
+    setSavedSuccessAlert(
+      `✓ Tarif de ${annualAmount.toLocaleString("fr-FR")} ${currency} enregistré pour ${currentName} !`
+    );
+    setTimeout(() => setSavedSuccessAlert(null), 3500);
   };
+
+  const currentSelectedClass = classes.find((c) => c.id === selectedClassId);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -963,12 +1035,91 @@ export function Step5TuitionPlans({
           Configurez vos frais de scolarité
         </h2>
         <p className="text-xs sm:text-sm text-slate-500">
-          Fixez le montant annuel et l&apos;échéancier des tranches de paiement selon vos besoins.
+          Définissez la scolarité et les tranches de paiement pour chaque classe selon vos besoins.
         </p>
       </div>
 
+      {/* Quick class pill selector */}
+      {classes.length > 0 && (
+        <div className="space-y-2">
+          <label className="block text-xs font-bold text-slate-700">
+            1. Choisissez la classe à configurer :
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => handleSelectClass("all")}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                selectedClassId === "all"
+                  ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 ring-2 ring-blue-600/20"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <span>🌐</span>
+              <span>Toutes les classes</span>
+            </button>
+
+            {classes.map((cls) => {
+              const isSelected = selectedClassId === cls.id;
+              const plan = tuitionPlans.find((p) => p.class_id === cls.id);
+              const isConfigured = plan && plan.total_amount > 0;
+
+              return (
+                <button
+                  key={cls.id}
+                  type="button"
+                  onClick={() => handleSelectClass(cls.id)}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                    isSelected
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 ring-2 ring-blue-600/20"
+                      : isConfigured
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100/70"
+                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{cls.name}</span>
+                  {isConfigured && (
+                    <span
+                      className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+                        isSelected ? "bg-white/20 text-white" : "bg-emerald-200/80 text-emerald-900"
+                      }`}
+                    >
+                      {plan.total_amount.toLocaleString("fr-FR")} {currency}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Editor Box */}
       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-        {/* Selection de classe & montant annuel */}
+        <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+          <div>
+            <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider block">
+              Configuration active
+            </span>
+            <h3 className="text-sm font-extrabold text-slate-900">
+              {selectedClassId === "all"
+                ? "Tarif général (Appliqué à toutes les classes)"
+                : `Tarif pour : ${currentSelectedClass?.name || "Classe"} (${currentSelectedClass?.level || "Niveau"})`}
+            </h3>
+          </div>
+
+          {selectedClassId !== "all" && (
+            <button
+              type="button"
+              onClick={() => handleSelectClass("all")}
+              className="text-[11px] font-bold text-slate-500 hover:text-blue-600 cursor-pointer underline"
+            >
+              Changer pour toutes les classes
+            </button>
+          )}
+        </div>
+
+        {/* Form Inputs */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -976,28 +1127,23 @@ export function Step5TuitionPlans({
             </label>
             <select
               value={selectedClassId}
-              onChange={(e) => {
-                const newId = e.target.value;
-                setSelectedClassId(newId);
-                const existing = tuitionPlans.find(
-                  (p) => (newId === "all" ? p.class_id === "all" : p.class_id === newId)
-                );
-                if (existing) {
-                  setAnnualAmount(existing.total_amount);
-                  setInstallments(existing.installments || []);
-                  setInstallmentCount(existing.installments?.length || 3);
-                }
-              }}
+              onChange={(e) => handleSelectClass(e.target.value)}
               className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none cursor-pointer"
             >
               <option value="all">Toutes les classes (Tarif unique)</option>
               {classes.length > 0 ? (
                 <optgroup label="Vos classes configurées">
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.level ? `(${c.level})` : ""}
-                    </option>
-                  ))}
+                  {classes.map((c) => {
+                    const p = tuitionPlans.find((tp) => tp.class_id === c.id);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.level ? `(${c.level})` : ""}{" "}
+                        {p && p.total_amount > 0
+                          ? `— ${p.total_amount.toLocaleString("fr-FR")} ${currency}`
+                          : "— (Non défini)"}
+                      </option>
+                    );
+                  })}
                 </optgroup>
               ) : null}
             </select>
@@ -1033,7 +1179,7 @@ export function Step5TuitionPlans({
             <select
               value={installmentCount}
               onChange={(e) => handleInstallmentCountChange(Number(e.target.value))}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none cursor-pointer"
             >
               <option value={1}>1 versement unique (Comptant)</option>
               <option value={2}>2 tranches (Semestriel)</option>
@@ -1136,7 +1282,7 @@ export function Step5TuitionPlans({
                     <button
                       type="button"
                       onClick={() => handleRemoveInstallment(inst.id)}
-                      className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                      className="text-slate-400 hover:text-rose-600 transition-colors p-1 cursor-pointer"
                       title="Supprimer cette tranche"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1148,7 +1294,7 @@ export function Step5TuitionPlans({
           )}
         </div>
 
-        {/* Real-time Strict Mathematical Validation Notice */}
+        {/* Real-time Mathematical Validation Notice & Save button */}
         {annualAmount > 0 && installments.length > 0 && (
           <div className="pt-2">
             {diff > 0 ? (
@@ -1174,25 +1320,105 @@ export function Step5TuitionPlans({
                 </div>
               </div>
             ) : (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between animate-in fade-in">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between animate-in fade-in flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span className="font-bold">
-                    Total des tranches parfaitement équilibré : {totalInstallmentsSum.toLocaleString("fr-FR")} {currency}
+                    Tranches équilibrées : {totalInstallmentsSum.toLocaleString("fr-FR")} {currency}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleSaveCurrentPlan}
-                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg font-bold text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  Appliquer
+                  <Check className="w-3.5 h-3.5" />
+                  <span>
+                    Enregistrer pour{" "}
+                    {selectedClassId === "all" ? "toutes les classes" : currentSelectedClass?.name || "cette classe"}
+                  </span>
                 </button>
               </div>
             )}
           </div>
         )}
+
+        {savedSuccessAlert && (
+          <div className="p-3 bg-emerald-100/80 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+            <Check className="w-4 h-4 text-emerald-700" />
+            <span>{savedSuccessAlert}</span>
+          </div>
+        )}
       </div>
+
+      {/* Recap of configured plans across classes */}
+      {classes.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-900">
+              Récapitulatif des tarifs par classe ({tuitionPlans.filter((p) => p.total_amount > 0).length}/{classes.length} configurées) :
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {classes.map((cls) => {
+              const plan = tuitionPlans.find((p) => p.class_id === cls.id);
+              const isSet = plan && plan.total_amount > 0;
+              const isCurrent = selectedClassId === cls.id;
+
+              return (
+                <div
+                  key={cls.id}
+                  onClick={() => handleSelectClass(cls.id)}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                    isCurrent
+                      ? "bg-blue-50/70 border-blue-500 ring-2 ring-blue-500/20 shadow-xs"
+                      : isSet
+                      ? "bg-white border-slate-200 hover:border-slate-300"
+                      : "bg-slate-50/70 border-dashed border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <strong className="text-xs font-extrabold text-slate-900 block">
+                        {cls.name}
+                      </strong>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {cls.level}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                        isSet
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-slate-200/70 text-slate-600"
+                      }`}
+                    >
+                      {isSet ? "Configuré ✓" : "Non défini"}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Scolarité :</span>
+                      <strong className="text-xs font-extrabold text-slate-900">
+                        {isSet
+                          ? `${plan.total_amount.toLocaleString("fr-FR")} ${currency}`
+                          : `— ${currency}`}
+                      </strong>
+                    </div>
+
+                    <span className="text-[11px] font-bold text-blue-600 hover:underline">
+                      {isCurrent ? "En cours d'édition" : isSet ? "Modifier →" : "Définir →"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
