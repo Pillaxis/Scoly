@@ -24,6 +24,7 @@ import {
   X,
   Mail,
   UserPlus,
+  Pencil,
 } from "lucide-react";
 import { School, AcademicYear, SchoolClass, TuitionPlan, StaffRole, TuitionInstallment } from "@/types/scoly";
 import { ImportModal } from "@/components/import/ImportModal";
@@ -336,41 +337,28 @@ const LEVEL_PRESETS: Record<
   string,
   { label: string; icon: string; classes: string[] }
 > = {
-  Primaire: {
-    label: "Primaire",
-    icon: "🎒",
-    classes: ["CI", "CP1", "CP2", "CE1", "CE2", "CM1", "CM2"],
+  Lycée: {
+    label: "Lycée",
+    icon: "🎓",
+    classes: ["Seconde", "Première", "Terminale"],
   },
   Collège: {
     label: "Collège",
     icon: "📐",
     classes: ["6ème", "5ème", "4ème", "3ème"],
   },
-  Lycée: {
-    label: "Lycée",
-    icon: "🎓",
-    classes: [
-      "2nde A",
-      "2nde CD",
-      "2nde S",
-      "1ère A",
-      "1ère D",
-      "1ère C",
-      "1ère G2",
-      "Terminale A",
-      "Terminale D",
-      "Terminale C",
-      "Terminale G2",
-    ],
+  Primaire: {
+    label: "Primaire",
+    icon: "🎒",
+    classes: ["CI", "CP", "CE1", "CE2", "CM1", "CM2"],
   },
   Maternelle: {
     label: "Maternelle",
     icon: "🧸",
     classes: [
-      "Garderie / Crèche",
-      "Petite Section (PS)",
-      "Moyenne Section (MS)",
-      "Grande Section (GS)",
+      "Petite Section",
+      "Moyenne Section",
+      "Grande Section",
     ],
   },
   Supérieur: {
@@ -379,11 +367,11 @@ const LEVEL_PRESETS: Record<
     classes: [
       "BTS 1",
       "BTS 2",
-      "Licence 1 (L1)",
-      "Licence 2 (L2)",
-      "Licence 3 (L3)",
-      "Master 1 (M1)",
-      "Master 2 (M2)",
+      "Licence 1",
+      "Licence 2",
+      "Licence 3",
+      "Master 1",
+      "Master 2",
     ],
   },
 };
@@ -397,9 +385,11 @@ export function Step4Classes({
   setClasses: React.Dispatch<React.SetStateAction<SchoolClass[]>>;
   school: School;
 }) {
-  const [activeLevel, setActiveLevel] = useState<string>("Primaire");
+  const [activeLevel, setActiveLevel] = useState<string>("Lycée");
   const [customClassName, setCustomClassName] = useState("");
-  const [customClassLevel, setCustomClassLevel] = useState<string>("Primaire");
+  const [customClassLevel, setCustomClassLevel] = useState<string>("Lycée");
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  const [editingClassName, setEditingClassName] = useState<string>("");
 
   // Synchronize customClassLevel with activeLevel when user clicks tabs
   const handleSelectLevelTab = (levelKey: string) => {
@@ -453,13 +443,8 @@ export function Step4Classes({
 
   const handleAddCustomClass = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!customClassName.trim()) return;
-
     const trimmed = customClassName.trim();
-    if (classes.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
-      setCustomClassName("");
-      return;
-    }
+    if (!trimmed) return;
 
     const newClass: SchoolClass = {
       id: "cls-" + crypto.randomUUID().slice(0, 8),
@@ -475,11 +460,54 @@ export function Step4Classes({
     setCustomClassName("");
   };
 
+  const handleStartEdit = (cls: SchoolClass) => {
+    setEditingClassId(cls.id);
+    setEditingClassName(cls.name);
+  };
+
+  const handleSaveEdit = (id: string) => {
+    const trimmed = editingClassName.trim();
+    if (!trimmed) {
+      setEditingClassId(null);
+      return;
+    }
+    setClasses((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, name: trimmed } : c))
+    );
+    setEditingClassId(null);
+  };
+
+  const handleDuplicateSection = (cls: SchoolClass) => {
+    // Generate intelligent section name: e.g. "Seconde" -> "Seconde S", or "Seconde A" -> "Seconde B"
+    const baseName = cls.name.replace(/\s+[A-Z0-9]+$/, "").trim() || cls.name;
+    const sameBaseCount = classes.filter((c) =>
+      c.name.toLowerCase().startsWith(baseName.toLowerCase())
+    ).length;
+
+    const suffixes = ["A", "B", "C", "D", "S", "CD", "G2"];
+    const suffix = suffixes[sameBaseCount] || `${sameBaseCount + 1}`;
+    const suggestedName = `${baseName} ${suffix}`;
+
+    const newCls: SchoolClass = {
+      id: "cls-" + crypto.randomUUID().slice(0, 8),
+      school_id: school.id,
+      academic_year_id: "current",
+      name: suggestedName,
+      level: cls.level,
+      order_index: classes.length + 1,
+      is_custom: true,
+    };
+
+    setClasses((prev) => [...prev, newCls]);
+    setEditingClassId(newCls.id);
+    setEditingClassName(suggestedName);
+  };
+
   const handleRemoveClass = (id: string) => {
     setClasses((prev) => prev.filter((c) => c.id !== id));
   };
 
-  const currentPreset = LEVEL_PRESETS[activeLevel] || LEVEL_PRESETS.Primaire;
+  const currentPreset = LEVEL_PRESETS[activeLevel] || LEVEL_PRESETS.Lycée;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -488,14 +516,14 @@ export function Step4Classes({
           Ajoutez vos classes
         </h2>
         <p className="text-xs sm:text-sm text-slate-500">
-          Choisissez un niveau pour voir ses classes ou ajoutez une classe personnalisée selon votre organisation.
+          Sélectionnez vos niveaux pour ajouter vos classes, puis personnalisez-les directement (ex: Seconde S, Seconde D, etc.).
         </p>
       </div>
 
       {/* Level Tabs Selector */}
       <div className="space-y-2">
         <label className="block text-xs font-bold text-slate-700">
-          1. Sélectionnez un niveau :
+          1. Sélectionnez un niveau d&apos;enseignement :
         </label>
         <div className="flex flex-wrap gap-2">
           {Object.entries(LEVEL_PRESETS).map(([key, data]) => {
@@ -537,7 +565,7 @@ export function Step4Classes({
           <div className="flex items-center gap-2">
             <span className="text-sm">{currentPreset.icon}</span>
             <span className="text-xs font-extrabold text-slate-900">
-              Classes disponibles pour le {currentPreset.label} :
+              Classes principales du {currentPreset.label} :
             </span>
           </div>
           <button
@@ -549,17 +577,17 @@ export function Step4Classes({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {currentPreset.classes.map((clsName) => {
             const isAdded = classes.some(
-              (c) => c.name.toLowerCase() === clsName.toLowerCase()
+              (c) => c.name.toLowerCase() === clsName.toLowerCase() || c.name.toLowerCase().startsWith(clsName.toLowerCase() + " ")
             );
             return (
               <button
                 key={clsName}
                 type="button"
                 onClick={() => handleTogglePresetClass(clsName, activeLevel)}
-                className={`p-2.5 rounded-xl border text-xs font-bold transition-all text-left flex items-center justify-between gap-2 cursor-pointer ${
+                className={`p-3 rounded-xl border text-xs font-bold transition-all text-left flex items-center justify-between gap-2 cursor-pointer ${
                   isAdded
                     ? "bg-blue-50/90 border-blue-500 text-blue-900 ring-1 ring-blue-500 shadow-2xs"
                     : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100/50"
@@ -584,12 +612,12 @@ export function Step4Classes({
       {/* Custom Class Form */}
       <div className="space-y-2">
         <label className="block text-xs font-bold text-slate-700">
-          2. Ou ajoutez une classe personnalisée :
+          2. Ou ajoutez une classe personnalisée directement :
         </label>
         <form onSubmit={handleAddCustomClass} className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
-            placeholder="Ex: 6ème B, Terminale A4, CP1 Rose..."
+            placeholder="Ex: Seconde S, Seconde D, Terminale A4..."
             value={customClassName}
             onChange={(e) => setCustomClassName(e.target.value)}
             className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all"
@@ -600,14 +628,15 @@ export function Step4Classes({
               onChange={(e) => setCustomClassLevel(e.target.value)}
               className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all"
             >
-              <option value="Primaire">Primaire</option>
-              <option value="Collège">Collège</option>
               <option value="Lycée">Lycée</option>
+              <option value="Collège">Collège</option>
+              <option value="Primaire">Primaire</option>
               <option value="Maternelle">Maternelle</option>
               <option value="Supérieur">Supérieur</option>
             </select>
             <button
-              type="submit"
+              type="button"
+              onClick={handleAddCustomClass}
               disabled={!customClassName.trim()}
               className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
             >
@@ -621,9 +650,14 @@ export function Step4Classes({
       {/* Configured Classes List */}
       <div className="space-y-2 pt-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-900">
-            Classes configurées ({classes.length})
-          </span>
+          <div>
+            <span className="text-xs font-bold text-slate-900">
+              Classes configurées ({classes.length})
+            </span>
+            <span className="text-[11px] text-slate-400 ml-2 hidden sm:inline">
+              (Cliquez sur le nom d&apos;une classe pour la renommer)
+            </span>
+          </div>
           {classes.length > 0 && (
             <button
               type="button"
@@ -640,30 +674,78 @@ export function Step4Classes({
             Aucune classe ajoutée pour le moment. Cliquez sur les classes ci-dessus ou ajoutez une classe personnalisée.
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto p-1">
-            {classes.map((cls) => (
-              <div
-                key={cls.id}
-                className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl shadow-2xs group hover:border-slate-300 transition-all"
-              >
-                <div className="min-w-0 pr-2">
-                  <p className="text-xs font-extrabold text-slate-900 truncate">
-                    {cls.name}
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-medium block truncate">
-                    {cls.level}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveClass(cls.id)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
-                  title="Supprimer la classe"
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto p-1">
+            {classes.map((cls) => {
+              const isEditing = editingClassId === cls.id;
+              return (
+                <div
+                  key={cls.id}
+                  className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl shadow-2xs hover:border-slate-300 transition-all gap-2"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
+                  {isEditing ? (
+                    <div className="flex items-center gap-1.5 w-full">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={editingClassName}
+                        onChange={(e) => setEditingClassName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveEdit(cls.id);
+                          if (e.key === "Escape") setEditingClassId(null);
+                        }}
+                        placeholder="Nom de la classe..."
+                        className="flex-1 px-2.5 py-1 bg-blue-50/60 border border-blue-500 rounded-lg text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(cls.id)}
+                        className="p-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors cursor-pointer shrink-0"
+                        title="Valider"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        onClick={() => handleStartEdit(cls)}
+                        className="min-w-0 flex-1 cursor-pointer group"
+                        title="Cliquez pour renommer"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-extrabold text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+                            {cls.name}
+                          </p>
+                          <Pencil className="w-3 h-3 text-slate-400 group-hover:text-blue-600 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block truncate">
+                          {cls.level}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateSection(cls)}
+                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer"
+                          title="Dupliquer / Ajouter une section (ex: Seconde A, Seconde B...)"
+                        >
+                          + Section
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveClass(cls.id)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Supprimer la classe"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
