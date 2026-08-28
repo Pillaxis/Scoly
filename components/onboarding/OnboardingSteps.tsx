@@ -442,21 +442,32 @@ export function Step4Classes({
   };
 
   const handleAddCustomClass = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = customClassName.trim();
-    if (!trimmed) return;
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const raw = customClassName.trim();
+    if (!raw) return;
 
-    const newClass: SchoolClass = {
-      id: "cls-" + crypto.randomUUID().slice(0, 8),
-      school_id: school.id,
+    // Split by comma or semicolon in case user entered multiple classes (e.g. "Seconde S, Seconde D, Seconde A")
+    const names = raw
+      .split(/[,;]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (names.length === 0) return;
+
+    const newClasses: SchoolClass[] = names.map((name, idx) => ({
+      id: "cls-" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36) + idx),
+      school_id: school?.id || "school-current",
       academic_year_id: "current",
-      name: trimmed,
-      level: customClassLevel,
-      order_index: classes.length + 1,
+      name: name,
+      level: customClassLevel || activeLevel || "Lycée",
+      order_index: classes.length + idx + 1,
       is_custom: true,
-    };
+    }));
 
-    setClasses((prev) => [...prev, newClass]);
+    setClasses((prev) => [...prev, ...newClasses]);
     setCustomClassName("");
   };
 
@@ -614,12 +625,24 @@ export function Step4Classes({
         <label className="block text-xs font-bold text-slate-700">
           2. Ou ajoutez une classe personnalisée directement :
         </label>
-        <form onSubmit={handleAddCustomClass} className="flex flex-col sm:flex-row gap-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAddCustomClass(e);
+          }}
+          className="flex flex-col sm:flex-row gap-2"
+        >
           <input
             type="text"
             placeholder="Ex: Seconde S, Seconde D, Terminale A4..."
             value={customClassName}
             onChange={(e) => setCustomClassName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAddCustomClass();
+              }
+            }}
             className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all"
           />
           <div className="flex gap-2">
@@ -636,9 +659,11 @@ export function Step4Classes({
             </select>
             <button
               type="button"
-              onClick={handleAddCustomClass}
-              disabled={!customClassName.trim()}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+              onClick={(e) => {
+                e.preventDefault();
+                handleAddCustomClass();
+              }}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
             >
               <Plus className="w-4 h-4" />
               <span>Ajouter</span>
