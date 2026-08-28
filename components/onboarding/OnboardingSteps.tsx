@@ -376,15 +376,19 @@ const LEVEL_PRESETS: Record<
   },
 };
 
-const generateSafeId = (prefix = "cls") => {
+const generateSafeId = (_prefix?: string) => {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+      return crypto.randomUUID();
     }
   } catch {
     // fallback
   }
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 };
 
 export function Step4Classes({
@@ -896,9 +900,10 @@ export function Step5TuitionPlans({
     setTuitionPlans((prev) => {
       let next = [...prev];
       targetClasses.forEach((cls) => {
+        const planUuid = generateSafeId();
         next = next.filter((p) => p.class_id !== cls.id);
         next.push({
-          id: "plan-" + cls.id,
+          id: planUuid,
           school_id: cls.school_id,
           academic_year_id: "current",
           class_id: cls.id,
@@ -906,8 +911,8 @@ export function Step5TuitionPlans({
           total_amount: amount,
           installments: insts.map((inst, i) => ({
             ...inst,
-            id: `inst-${cls.id}-${i + 1}`,
-            tuition_plan_id: "plan-" + cls.id,
+            id: generateSafeId(),
+            tuition_plan_id: planUuid,
           })),
         });
       });
@@ -948,7 +953,7 @@ export function Step5TuitionPlans({
       const isFirst = i === 1;
       const amt = isFirst ? base + remainder : base;
       nextInst.push({
-        id: `inst-${Date.now()}-${i}`,
+        id: generateSafeId(),
         tuition_plan_id: "plan-current",
         title:
           i === 1

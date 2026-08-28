@@ -39,6 +39,8 @@ export default function OnboardingPage() {
     completeOnboarding,
     updateSchool,
     updateAcademicYear,
+    updateClasses,
+    updateTuitionPlans,
     inviteStaffMember,
     logoutUser,
   } = useScoly();
@@ -173,6 +175,8 @@ export default function OnboardingPage() {
       // 1. Update main store state immediately
       updateSchool(localSchool);
       updateAcademicYear(localAcademicYear);
+      updateClasses(localClasses);
+      updateTuitionPlans(localTuitionPlans);
 
       if (currentStep === 6 && invitedUsers.length > 0) {
         invitedUsers.forEach((u) => {
@@ -199,8 +203,13 @@ export default function OnboardingPage() {
         // Autosave progress
         await saveOnboardingStep(nextStep, localSchool);
       } else {
-        // Step 9: Finalize onboarding
-        await completeOnboarding();
+        // Step 9: Finalize onboarding with exact customized configuration
+        await completeOnboarding({
+          school: localSchool,
+          academicYear: localAcademicYear,
+          classes: localClasses,
+          tuitionPlans: localTuitionPlans,
+        });
         startTransition(() => {
           router.push("/dashboard?welcome=true");
         });

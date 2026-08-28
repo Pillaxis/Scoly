@@ -15,8 +15,13 @@ export function UrgentActionCenter() {
 
   // Unconfigured classes
   const unconfiguredClassesCount = useMemo(() => {
-    return classes.filter((c) => !tuitionPlans.some((tp) => tp.class_id === c.id)).length;
+    if (classes.length === 0) return 0;
+    const hasAllPlan = tuitionPlans.some((tp) => tp.class_id === "all" && tp.total_amount > 0);
+    if (hasAllPlan) return 0;
+    return classes.filter((c) => !tuitionPlans.some((tp) => tp.class_id === c.id && tp.total_amount > 0)).length;
   }, [classes, tuitionPlans]);
+
+  const hasVerificationAction = unconfiguredClassesCount > 0 || dashboardMetrics.students_credit > 0;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-2xs">
@@ -39,7 +44,7 @@ export function UrgentActionCenter() {
         <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200/60">
           {dashboardMetrics.students_critical +
             dashboardMetrics.students_upcoming +
-            (unconfiguredClassesCount > 0 ? 1 : 0) +
+            (hasVerificationAction ? 1 : 0) +
             (todayPayments.length > 0 ? 1 : 0)}{" "}
           action(s)
         </span>
@@ -116,26 +121,42 @@ export function UrgentActionCenter() {
               <span className="font-mono font-black text-blue-700 text-lg">
                 {unconfiguredClassesCount > 0
                   ? unconfiguredClassesCount
-                  : dashboardMetrics.students_credit}
+                  : dashboardMetrics.students_credit > 0
+                  ? dashboardMetrics.students_credit
+                  : 0}
               </span>
             </div>
             <h3 className="font-bold text-slate-900 text-xs mt-2.5">
               {unconfiguredClassesCount > 0
                 ? `${unconfiguredClassesCount} classe(s) sans grille définie`
-                : `${dashboardMetrics.students_credit} élève(s) avec avance/crédit`}
+                : dashboardMetrics.students_credit > 0
+                ? `${dashboardMetrics.students_credit} élève(s) avec avance/crédit`
+                : classes.length > 0
+                ? "Toutes les grilles configurées"
+                : "Aucune classe configurée"}
             </h3>
             <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
               {unconfiguredClassesCount > 0
                 ? "Définissez le calendrier et montant pour ces classes."
-                : "Vérifier l'imputation des versements anticipés."}
+                : dashboardMetrics.students_credit > 0
+                ? "Vérifier l'imputation des versements anticipés."
+                : classes.length > 0
+                ? `Les montants et échéanciers de vos ${classes.length} classes sont opérationnels.`
+                : "Configurez vos classes et grilles de scolarité."}
             </p>
           </div>
 
           <Link
-            href={unconfiguredClassesCount > 0 ? "/tuition" : "/students"}
+            href={unconfiguredClassesCount > 0 ? "/tuition" : dashboardMetrics.students_credit > 0 ? "/students" : "/tuition"}
             className="mt-4 inline-flex items-center justify-between w-full px-3 py-2 bg-blue-600 group-hover:bg-blue-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
-            <span>{unconfiguredClassesCount > 0 ? "Configurer les tarifs" : "Vérifier les comptes"}</span>
+            <span>
+              {unconfiguredClassesCount > 0
+                ? "Configurer les tarifs"
+                : dashboardMetrics.students_credit > 0
+                ? "Vérifier les comptes"
+                : "Consulter les grilles"}
+            </span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>

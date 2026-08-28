@@ -86,12 +86,24 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    // ─── 4. UPSERT CLASSES ───────────────────────────────────────────────────
-    if (Array.isArray(classes) && classes.length > 0) {
+    // ─── 4. UPSERT CLASSES (WITH OBSOLETE CLASS PRUNING) ─────────────────────
+    const isUUID = (str: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+
+    // Map old/custom IDs to valid UUIDs
+    const classIdMap = new Map<string, string>();
+
+    if (Array.isArray(classes)) {
+      const activeClassUuids: string[] = [];
+
       for (const cls of classes) {
+        const validId = isUUID(cls.id) ? cls.id : crypto.randomUUID();
+        classIdMap.set(cls.id, validId);
+        activeClassUuids.push(validId);
+
         try {
           await supabase.from("classes").upsert({
-            id: cls.id,
+            id: validId,
             school_id: schoolId,
             academic_year_id: yearId,
             name: cls.name,
@@ -103,7 +115,32 @@ export async function POST(req: NextRequest) {
             description: cls.description || null,
             order_index: cls.order_index || 0,
           });
-        } catch {}
+        } catch (err: any) {
+          console.warn("[Save-All] Class upsert notice:", err?.message);
+        }
+      }
+
+      // If specific classes were provided, remove seed/obsolete classes for this school
+      if (activeClassUuids.length > 0) {
+        try {
+          const { data: dbClasses } = await supabase
+            .from("classes")
+            .select("id")
+            .eq("school_id", schoolId);
+
+          const toDelete = (dbClasses || [])
+            .map((c) => c.id)
+            .filter((id) => !activeClassUuids.includes(id));
+
+          if (toDelete.length > 0) {
+            // Delete tuition plans linked to deleted classes
+            await supabase.from("tuition_plans").delete().in("class_id", toDelete);
+            // Delete classes
+            await supabase.from("classes").delete().in("id", toDelete);
+          }
+        } catch (pruneErr) {
+          console.warn("[Save-All] Class prune notice:", pruneErr);
+        }
       }
     }
 
@@ -127,7 +164,9 @@ export async function POST(req: NextRequest) {
     let studentsSaved = 0;
     if (Array.isArray(students) && students.length > 0) {
       for (const s of students) {
-        let parentId = s.parent?.id;
+        let parentId = s.parent?.id && isUUID(s.parent.id) ? s.parent.id : crypto.randomUUID();
+        const studentId = s.id && isUUID(s.id) ? s.id : crypto.randomUUID();
+        const studentClassId = classIdMap.get(s.class_id) || (isUUID(s.class_id) ? s.class_id : null);
 
         // Insert / Update Parent
         if (s.parent && s.parent.full_name) {
@@ -135,6 +174,7 @@ export async function POST(req: NextRequest) {
             const { data: pData } = await supabase
               .from("parents")
               .upsert({
+                id: parentId,
                 school_id: schoolId,
                 full_name: s.parent.full_name,
                 relationship: s.parent.relationship || "Parent",
@@ -154,11 +194,11 @@ export async function POST(req: NextRequest) {
         // Insert / Update Student
         try {
           const { data: sData, error: sErr } = await supabase.from("students").upsert({
-            id: s.id,
+            id: studentId,
             school_id: schoolId,
             academic_year_id: yearId,
-            class_id: s.class_id || null,
-            matricule: s.matricule || `MAT-${s.id.slice(0, 6)}`,
+            class_id: studentClassId,
+            matricule: s.matricule || `MAT-${studentId.slice(0, 6)}`,
             first_name: s.first_name,
             last_name: s.last_name,
             gender: s.gender || "M",
@@ -188,12 +228,16 @@ export async function POST(req: NextRequest) {
     let paymentsSaved = 0;
     if (Array.isArray(payments) && payments.length > 0) {
       for (const p of payments) {
+        const paymentId = p.id && isUUID(p.id) ? p.id : crypto.randomUUID();
+        const paymentStudentId = isUUID(p.student_id) ? p.student_id : null;
+        if (!paymentStudentId) continue;
+
         try {
           const { error: pErr } = await supabase.from("payments").upsert({
-            id: p.id,
+            id: paymentId,
             school_id: schoolId,
             academic_year_id: yearId,
-            student_id: p.student_id,
+            student_id: paymentStudentId,
             amount: p.amount,
             allocated_amount: p.allocated_amount || p.amount,
             credit_amount: p.credit_amount || 0,
@@ -216,32 +260,51 @@ export async function POST(req: NextRequest) {
     // ─── 8. UPSERT TUITION PLANS ──────────────────────────────────────────────
     if (Array.isArray(tuitionPlans) && tuitionPlans.length > 0) {
       for (const tp of tuitionPlans) {
-        try {
-          const { data: planData } = await supabase
-            .from("tuition_plans")
-            .upsert({
-              id: tp.id,
-              school_id: schoolId,
-              academic_year_id: yearId,
-              class_id: tp.class_id,
-              total_amount: tp.total_amount,
-              description: tp.description || null,
-            })
-            .select("id")
-            .single();
+        const targetClassId = classIdMap.get(tp.class_id) || (isUUID(tp.class_id) ? tp.class_id : null);
+        if (!targetClassId && tp.class_id !== "all") continue;
 
-          if (planData?.id && Array.isArray(tp.installments) && tp.installments.length > 0) {
-            await supabase.from("tuition_installments").delete().eq("tuition_plan_id", planData.id);
-            const installmentsPayload = tp.installments.map((inst: any, idx: number) => ({
-              tuition_plan_id: planData.id,
-              title: inst.title,
-              due_date: inst.due_date,
-              amount: inst.amount,
-              installment_order: inst.installment_order || idx + 1,
-            }));
-            await supabase.from("tuition_installments").insert(installmentsPayload);
+        // If 'all', create a plan for every active class
+        const targetClasses = targetClassId
+          ? [targetClassId]
+          : Array.from(classIdMap.values());
+
+        for (const clsUuid of targetClasses) {
+          try {
+            const planId = isUUID(tp.id) ? tp.id : crypto.randomUUID();
+            const { data: planData, error: planErr } = await supabase
+              .from("tuition_plans")
+              .upsert(
+                {
+                  id: planId,
+                  school_id: schoolId,
+                  academic_year_id: yearId,
+                  class_id: clsUuid,
+                  total_amount: Number(tp.total_amount) || 0,
+                  description: tp.description || null,
+                },
+                { onConflict: "school_id,academic_year_id,class_id" }
+              )
+              .select("id")
+              .single();
+
+            const actualPlanId = planData?.id || planId;
+
+            if (actualPlanId && Array.isArray(tp.installments) && tp.installments.length > 0) {
+              await supabase.from("tuition_installments").delete().eq("tuition_plan_id", actualPlanId);
+              const installmentsPayload = tp.installments.map((inst: any, idx: number) => ({
+                id: isUUID(inst.id) ? inst.id : crypto.randomUUID(),
+                tuition_plan_id: actualPlanId,
+                title: inst.title || `Tranche ${idx + 1}`,
+                due_date: inst.due_date || "2025-10-05",
+                amount: Number(inst.amount) || 0,
+                installment_order: inst.installment_order || idx + 1,
+              }));
+              await supabase.from("tuition_installments").insert(installmentsPayload);
+            }
+          } catch (tpErr: any) {
+            console.warn("[Save-All] Tuition plan notice:", tpErr?.message);
           }
-        } catch {}
+        }
       }
     }
 

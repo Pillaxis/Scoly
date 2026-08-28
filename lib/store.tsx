@@ -187,7 +187,14 @@ interface ScolyContextType {
 
   // Onboarding
   saveOnboardingStep: (step: number, data?: Partial<School>) => Promise<void>;
-  completeOnboarding: () => Promise<void>;
+  completeOnboarding: (setupData?: {
+    school?: School;
+    academicYear?: AcademicYear;
+    classes?: SchoolClass[];
+    tuitionPlans?: TuitionPlan[];
+  }) => Promise<void>;
+  updateClasses: (newClasses: SchoolClass[]) => void;
+  updateTuitionPlans: (newPlans: TuitionPlan[]) => void;
 
   // Configurable Payment Methods
   paymentMethods: PaymentMethodConfig[];
@@ -697,17 +704,77 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     [school.id]
   );
 
-  const completeOnboarding = useCallback(async () => {
-    const updated: School = {
-      ...school,
-      onboarding_completed: true,
-      onboarding_current_step: 9,
-    };
-    setSchool(updated);
-    if (isSupabaseConfigured) {
-      await upsertSchool(updated).catch(() => {});
-    }
-  }, [school]);
+  const updateClasses = useCallback((newClasses: SchoolClass[]) => {
+    setClasses(newClasses);
+  }, []);
+
+  const updateTuitionPlans = useCallback((newPlans: TuitionPlan[]) => {
+    setTuitionPlans(newPlans);
+  }, []);
+
+  const completeOnboarding = useCallback(
+    async (setupData?: {
+      school?: School;
+      academicYear?: AcademicYear;
+      classes?: SchoolClass[];
+      tuitionPlans?: TuitionPlan[];
+    }) => {
+      const finalSchool: School = {
+        ...(setupData?.school || school),
+        onboarding_completed: true,
+        onboarding_current_step: 9,
+      };
+      setSchool(finalSchool);
+
+      let finalYear = academicYear;
+      if (setupData?.academicYear) {
+        finalYear = { ...academicYear, ...setupData.academicYear };
+        setAcademicYear(finalYear);
+      }
+
+      let finalClasses = classes;
+      if (Array.isArray(setupData?.classes)) {
+        finalClasses = setupData.classes;
+        setClasses(finalClasses);
+      }
+
+      let finalPlans = tuitionPlans;
+      if (Array.isArray(setupData?.tuitionPlans)) {
+        finalPlans = setupData.tuitionPlans;
+        setTuitionPlans(finalPlans);
+      }
+
+      // 1. Write updated state to Supabase PostgreSQL immediately
+      setSyncStatus("syncing");
+      try {
+        const res = await fetch("/api/sync/save-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            school: finalSchool,
+            academicYear: finalYear,
+            classes: finalClasses,
+            students: [],
+            payments: [],
+            tuitionPlans: finalPlans,
+            paymentMethods,
+            reminders: [],
+            importBatches: [],
+            notifications: [],
+            user_id: currentUser?.id,
+            email: currentUser?.email || finalSchool?.email,
+          }),
+        });
+
+        if (res.ok) {
+          setSyncStatus("synced");
+        }
+      } catch (err) {
+        console.warn("[Onboarding] Sync error on completion:", err);
+      }
+    },
+    [school, academicYear, classes, tuitionPlans, paymentMethods, currentUser]
+  );
 
   const logoutUser = useCallback(async () => {
     const client = getSupabaseBrowser();
@@ -2087,6 +2154,8 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         resetPassword,
         saveOnboardingStep,
         completeOnboarding,
+        updateClasses,
+        updateTuitionPlans,
         paymentMethods,
         addPaymentMethod,
         updatePaymentMethod,
