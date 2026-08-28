@@ -126,10 +126,10 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           </label>
           <input
             type="text"
-            placeholder="Lomé"
-            value={school.city || "Lomé"}
+            placeholder="Ex: Lomé"
+            value={school.city || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, city: e.target.value }))}
-            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
         </div>
 
@@ -139,10 +139,10 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           </label>
           <input
             type="text"
-            placeholder="Togo"
-            value={school.country || "Togo"}
+            placeholder="Ex: Togo"
+            value={school.country || ""}
             onChange={(e) => setSchool((prev) => ({ ...prev, country: e.target.value }))}
-            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
+            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
         </div>
 
@@ -282,11 +282,11 @@ export function Step3AcademicYear({
             <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
             <input
               type="text"
-              placeholder="2025-2026"
-              value={academicYear.name}
+              placeholder="Ex: 2025-2026"
+              value={academicYear.name || ""}
               onChange={(e) => setAcademicYear((prev) => ({ ...prev, name: e.target.value }))}
               required
-              className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
+              className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all"
             />
           </div>
         </div>
@@ -561,12 +561,12 @@ export function Step5TuitionPlans({
   onValidityChange?: (isValid: boolean) => void;
 }) {
   const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || "default");
-  const [annualAmount, setAnnualAmount] = useState<number>(150000);
+  const [annualAmount, setAnnualAmount] = useState<number>(0);
   const [installmentCount, setInstallmentCount] = useState<number>(3);
   const [installments, setInstallments] = useState<TuitionInstallment[]>([
-    { id: "inst-1", tuition_plan_id: "plan-1", title: "1ère Tranche (Rentrée)", due_date: "2025-10-05", amount: 50000, installment_order: 1 },
-    { id: "inst-2", tuition_plan_id: "plan-1", title: "2ème Tranche", due_date: "2026-01-10", amount: 50000, installment_order: 2 },
-    { id: "inst-3", tuition_plan_id: "plan-1", title: "3ème Tranche (Solde)", due_date: "2026-04-10", amount: 50000, installment_order: 3 },
+    { id: "inst-1", tuition_plan_id: "plan-1", title: "1ère Tranche (Rentrée)", due_date: "2025-10-05", amount: 0, installment_order: 1 },
+    { id: "inst-2", tuition_plan_id: "plan-1", title: "2ème Tranche", due_date: "2026-01-10", amount: 0, installment_order: 2 },
+    { id: "inst-3", tuition_plan_id: "plan-1", title: "3ème Tranche (Solde)", due_date: "2026-04-10", amount: 0, installment_order: 3 },
   ]);
 
   // Calculate sum of installments
@@ -575,7 +575,7 @@ export function Step5TuitionPlans({
   }, [installments]);
 
   const diff = totalInstallmentsSum - annualAmount;
-  const isMatch = Math.abs(diff) < 0.01 && annualAmount > 0;
+  const isMatch = annualAmount === 0 || Math.abs(diff) < 0.01;
 
   // Inform parent about mathematical validity
   React.useEffect(() => {
@@ -686,7 +686,8 @@ export function Step5TuitionPlans({
             </label>
             <input
               type="number"
-              value={annualAmount}
+              value={annualAmount === 0 ? "" : annualAmount}
+              placeholder="Ex: 150 000"
               onChange={(e) => {
                 const val = Number(e.target.value) || 0;
                 setAnnualAmount(val);
@@ -694,7 +695,7 @@ export function Step5TuitionPlans({
               }}
               min={1000}
               step={1000}
-              className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-extrabold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-extrabold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-none"
             />
           </div>
 
@@ -882,20 +883,20 @@ export function Step6Users({
             <label className="block text-[11px] font-bold text-slate-600 mb-1">Nom complet</label>
             <input
               type="text"
-              placeholder="Paul Mensah"
+              placeholder="Ex: Paul Mensah"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-none"
             />
           </div>
           <div>
             <label className="block text-[11px] font-bold text-slate-600 mb-1">Email</label>
             <input
               type="email"
-              placeholder="compta@ecole.tg"
+              placeholder="Ex: compta@ecole.tg"
               value={userEmail}
               onChange={(e) => setUserEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-none"
             />
           </div>
           <div>

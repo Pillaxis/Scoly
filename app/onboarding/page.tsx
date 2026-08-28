@@ -227,17 +227,17 @@ export default function OnboardingPage() {
 
       {/* ── Main Container ────────────────────────────────────────────────── */}
       <main className="flex-1 max-w-3xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-center">
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden flex flex-col">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xl flex flex-col relative">
           
-          {/* Wizard Progress Bar */}
-          <div className="p-6 sm:p-8 bg-slate-900 text-white space-y-4">
+          {/* Wizard Progress Bar (Pinned / Sticky on scroll) */}
+          <div className="sticky top-16 z-20 rounded-t-3xl p-5 sm:p-7 bg-slate-900 text-white space-y-3.5 shadow-lg border-b border-slate-800 backdrop-blur-md">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-blue-400 block mb-1">
-                  Étape {currentStep} sur {totalSteps}
+                  Étape {currentStep} sur {totalSteps} • {currentMeta.title}
                 </span>
-                <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
-                  Configurons votre espace SCOLY
+                <h1 className="text-base sm:text-lg font-black tracking-tight text-white">
+                  Configuration de votre établissement
                 </h1>
               </div>
               <div className="text-right">
@@ -256,14 +256,14 @@ export default function OnboardingPage() {
             </div>
 
             {/* Step Pills on Desktop */}
-            <div className="hidden sm:flex items-center justify-between text-[10px] font-semibold text-slate-400 pt-1">
+            <div className="hidden sm:flex items-center justify-between text-[10px] font-semibold text-slate-400 pt-1 overflow-x-auto">
               {stepsMeta.map((s) => {
                 const isDone = currentStep > s.number;
                 const isCurrent = currentStep === s.number;
                 return (
                   <span
                     key={s.number}
-                    className={`transition-colors ${
+                    className={`transition-colors whitespace-nowrap px-1 ${
                       isCurrent
                         ? "text-blue-400 font-bold"
                         : isDone
