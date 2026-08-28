@@ -923,15 +923,30 @@ export function Step5TuitionPlans({
             </label>
             <select
               value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              onChange={(e) => {
+                const newId = e.target.value;
+                setSelectedClassId(newId);
+                const existing = tuitionPlans.find(
+                  (p) => (newId === "all" ? p.class_id === "all" : p.class_id === newId)
+                );
+                if (existing) {
+                  setAnnualAmount(existing.total_amount);
+                  setInstallments(existing.installments || []);
+                  setInstallmentCount(existing.installments?.length || 3);
+                }
+              }}
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none cursor-pointer"
             >
               <option value="all">Toutes les classes (Tarif unique)</option>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.level})
-                </option>
-              ))}
+              {classes.length > 0 ? (
+                <optgroup label="Vos classes configurées">
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.level ? `(${c.level})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
             </select>
           </div>
 

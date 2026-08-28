@@ -54,10 +54,11 @@ export default function OnboardingPage() {
   const [localClasses, setLocalClasses] = useState(storeClasses);
   const [localTuitionPlans, setLocalTuitionPlans] = useState(storeTuitionPlans);
   const [invitedUsers, setInvitedUsers] = useState<{ name: string; email: string; role: StaffRole }[]>([]);
+  const isInitializedRef = React.useRef(false);
 
   // Sync state once store is loaded
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && !isInitializedRef.current) {
       if (!currentUser) {
         router.push("/login");
         return;
@@ -67,6 +68,8 @@ export default function OnboardingPage() {
         router.push("/dashboard");
         return;
       }
+
+      isInitializedRef.current = true;
 
 
       const cleanSchool: School = {
