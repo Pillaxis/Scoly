@@ -23,7 +23,7 @@ import {
   Step8ImportData,
   Step9FinishSummary,
 } from "@/components/onboarding/OnboardingSteps";
-import { StaffRole } from "@/types/scoly";
+import { StaffRole, School } from "@/types/scoly";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -69,7 +69,17 @@ export default function OnboardingPage() {
       }
 
 
-      setLocalSchool(storeSchool);
+      const cleanSchool: School = {
+        ...storeSchool,
+        phone:
+          !storeSchool.phone ||
+          storeSchool.phone === "+228 90 00 00 00" ||
+          storeSchool.phone.startsWith("+228 90 00") ||
+          storeSchool.phone === "+228 90 12 34 56"
+            ? ""
+            : storeSchool.phone,
+      };
+      setLocalSchool(cleanSchool);
       setLocalAcademicYear(storeAcademicYear);
       setLocalClasses(storeClasses);
       setLocalTuitionPlans(storeTuitionPlans);

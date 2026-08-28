@@ -85,7 +85,14 @@ export function Step1SchoolInfo({ school, setSchool }: { school: School; setScho
           <input
             type="tel"
             placeholder="Ex: +228 90 12 34 56"
-            value={school.phone || ""}
+            value={
+              !school.phone ||
+              school.phone === "+228 90 00 00 00" ||
+              school.phone.startsWith("+228 90 00") ||
+              school.phone === "+228 90 12 34 56"
+                ? ""
+                : school.phone
+            }
             onChange={(e) => setSchool((prev) => ({ ...prev, phone: e.target.value }))}
             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all text-xs"
           />
