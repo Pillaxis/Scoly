@@ -395,12 +395,24 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
               setAuditLogs(data.auditLogs);
             }
             if (Array.isArray(data.notifications)) {
-              setNotifications(data.notifications);
+              let localReadIds: string[] = [];
+              if (typeof window !== "undefined" && data.school?.id) {
+                try {
+                  const stored = localStorage.getItem(`scoly_read_notifs_${data.school.id}`);
+                  if (stored) localReadIds = JSON.parse(stored);
+                } catch {}
+              }
+              const localReadSet = new Set(localReadIds);
+              const mergedNotifs = data.notifications.map((n: any) => ({
+                ...n,
+                is_read: n.is_read || localReadSet.has(n.id) || (n.dedup_key && localReadSet.has(n.dedup_key)),
+              }));
+              setNotifications(mergedNotifs);
             }
             if (data.subscription) {
               setSubscription(data.subscription);
             } else if (data.school?.id) {
-              setSubscription(getDefaultTrialSubscription(data.school.id));
+              setSubscription(getDefaultTrialSubscription(data.school.id, data.school?.created_at));
             }
             if (data.userRole) {
               setCurrentUser((prev) => (prev ? { ...prev, role: data.userRole } : null));
@@ -440,12 +452,29 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             setStudents(sbStudents);
             setPayments(sbPayments);
             setTuitionPlans(sbPlans);
+            if (sbMethods.length > 0) setPaymentMethods(sbMethods);
             setReminders(sbReminders);
-            setPaymentMethods(sbMethods);
             setImportBatches(sbBatches);
-            if (sbNotifications.length > 0) setNotifications(sbNotifications);
-            if (sbSub) setSubscription(sbSub);
-            else setSubscription(getDefaultTrialSubscription(sbSchool.id));
+
+            let localReadIds: string[] = [];
+            if (typeof window !== "undefined" && sbSchool.id) {
+              try {
+                const stored = localStorage.getItem(`scoly_read_notifs_${sbSchool.id}`);
+                if (stored) localReadIds = JSON.parse(stored);
+              } catch {}
+            }
+            const localReadSet = new Set(localReadIds);
+            const mergedSbNotifs = sbNotifications.map((n: any) => ({
+              ...n,
+              is_read: n.is_read || localReadSet.has(n.id) || (n.dedup_key && localReadSet.has(n.dedup_key)),
+            }));
+            setNotifications(mergedSbNotifs);
+
+            if (sbSub) {
+              setSubscription(sbSub);
+            } else {
+              setSubscription(getDefaultTrialSubscription(sbSchool.id, sbSchool.created_at));
+            }
           }
           setSyncStatus("synced");
           setSyncErrorMessage(undefined);
@@ -1086,6 +1115,15 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const triggerProactiveAnalysis = useCallback(() => {
     if (!school.id || !isLoaded) return;
 
+    let localReadIds: string[] = [];
+    if (typeof window !== "undefined" && school.id) {
+      try {
+        const stored = localStorage.getItem(`scoly_read_notifs_${school.id}`);
+        if (stored) localReadIds = JSON.parse(stored);
+      } catch {}
+    }
+    const localReadSet = new Set(localReadIds);
+
     const generated = analyzeSchoolState({
       school,
       students,
@@ -1107,7 +1145,9 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         const toAdd = generated.filter(
           (n) =>
             !existingIds.has(n.id) &&
-            (!n.dedup_key || !existingDedups.has(n.dedup_key))
+            (!n.dedup_key || !existingDedups.has(n.dedup_key)) &&
+            !localReadSet.has(n.id) &&
+            (!n.dedup_key || !localReadSet.has(n.dedup_key))
         );
 
         if (toAdd.length === 0) return prev;
@@ -1131,7 +1171,6 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     subscription,
     isLoaded,
   ]);
-
 
   // Trigger proactive analysis safely with rate limiter
   useEffect(() => {
@@ -1180,6 +1219,23 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         )
       );
 
+      if (typeof window !== "undefined" && school.id) {
+        try {
+          const key = `scoly_read_notifs_${school.id}`;
+          const existing: string[] = JSON.parse(localStorage.getItem(key) || "[]");
+          if (!existing.includes(notificationId)) {
+            existing.push(notificationId);
+            localStorage.setItem(key, JSON.stringify(existing));
+          }
+        } catch {}
+      }
+
+      fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "MARK_READ", notification_id: notificationId, school_id: school.id }),
+      }).catch(() => {});
+
       markNotificationAsReadDb(notificationId, currentUser?.id).catch(() => {});
 
       broadcastNotificationEvent({
@@ -1198,6 +1254,22 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       prev.map((n) => ({ ...n, is_read: true, read_at: now }))
     );
 
+    if (typeof window !== "undefined" && school.id) {
+      try {
+        const key = `scoly_read_notifs_${school.id}`;
+        const allIds = notifications.map((n) => n.id);
+        const existing: string[] = JSON.parse(localStorage.getItem(key) || "[]");
+        const merged = Array.from(new Set([...existing, ...allIds]));
+        localStorage.setItem(key, JSON.stringify(merged));
+      } catch {}
+    }
+
+    fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "MARK_ALL_READ", school_id: school.id }),
+    }).catch(() => {});
+
     markAllNotificationsAsReadDb(school.id, currentUser?.id).catch(() => {});
 
     broadcastNotificationEvent({
@@ -1205,7 +1277,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       schoolId: school.id,
       senderUserId: currentUser?.id,
     });
-  }, [school.id, currentUser?.id]);
+  }, [school.id, currentUser?.id, notifications]);
 
   const deleteNotification = useCallback(
     async (notificationId: string) => {

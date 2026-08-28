@@ -58,6 +58,7 @@ export interface School {
   onboarding_completed?: boolean;
   onboarding_current_step?: number;
   notification_preferences?: NotificationPreferences;
+  created_at?: string;
 }
 
 export interface AcademicYear {

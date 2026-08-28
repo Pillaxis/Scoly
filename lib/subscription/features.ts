@@ -438,16 +438,16 @@ export function getTrialTimeRemaining(subscription: ScolySubscription | null | u
     };
   }
 
-  const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const hours = Math.ceil(diffMs / (1000 * 60 * 60));
 
   let message = "";
-  if (days >= 14) {
-    message = "Essai gratuit — Il vous reste 15 jours pour découvrir SCOLY";
-  } else if (days > 1) {
+  if (days > 1) {
     message = `Il vous reste ${days} jours d'essai gratuit`;
+  } else if (days === 1) {
+    message = "Il vous reste 1 jour d'essai gratuit";
   } else {
-    message = "Votre essai se termine demain. Choisissez votre forfait pour continuer";
+    message = `Votre essai se termine dans ${hours}h. Choisissez votre forfait pour continuer`;
   }
 
   return {
@@ -455,7 +455,7 @@ export function getTrialTimeRemaining(subscription: ScolySubscription | null | u
     hoursRemaining: hours,
     isExpired: false,
     message,
-    badgeLabel: `Essai : ${days}j`,
+    badgeLabel: days > 0 ? `Essai (${days}j)` : `Essai (<24h)`,
   };
 }
 
@@ -565,9 +565,9 @@ export function calculateSubscriptionDates(
 /**
  * Creates default 15-day trial subscription object for a school
  */
-export function getDefaultTrialSubscription(schoolId: string): ScolySubscription {
-  const now = new Date();
-  const trialEnd = new Date(now);
+export function getDefaultTrialSubscription(schoolId: string, createdAt?: string): ScolySubscription {
+  const startDate = createdAt ? new Date(createdAt) : new Date();
+  const trialEnd = new Date(startDate);
   trialEnd.setDate(trialEnd.getDate() + 15);
 
   return {
@@ -578,7 +578,7 @@ export function getDefaultTrialSubscription(schoolId: string): ScolySubscription
     status: "trialing",
     price_amount: 0,
     currency: "FCFA",
-    trial_start_at: now.toISOString(),
+    trial_start_at: startDate.toISOString(),
     trial_end_at: trialEnd.toISOString(),
     subscription_start_at: null,
     subscription_end_at: null,
@@ -587,6 +587,6 @@ export function getDefaultTrialSubscription(schoolId: string): ScolySubscription
     last_payment_reference: null,
     last_payment_method: null,
     payment_provider: "fedapay",
-    created_at: now.toISOString(),
+    created_at: startDate.toISOString(),
   };
 }

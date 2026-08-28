@@ -351,14 +351,30 @@ export async function POST(req: NextRequest) {
           created_at: n.created_at || new Date().toISOString(),
         }));
 
-        // Map Subscription (or auto-provision 15-day trial)
+        // Map Subscription (or auto-provision 15-day trial based on school creation date)
         let subscription = subscriptionsRes.status === "fulfilled" && subscriptionsRes.value.data ? subscriptionsRes.value.data : null;
         if (!subscription && targetSchoolId) {
-          subscription = getDefaultTrialSubscription(targetSchoolId);
+          subscription = getDefaultTrialSubscription(targetSchoolId, schoolData?.created_at);
           try {
             await supabase.from("subscriptions").upsert(subscription, { onConflict: "school_id" });
           } catch (upsertErr) {
             console.warn("Bootstrap trial subscription upsert error:", upsertErr);
+          }
+        } else if (subscription && subscription.status === "trialing" && schoolData?.created_at) {
+          // If subscription trial was misaligned from school registration date, align trial_end_at
+          const schoolCreatedMs = new Date(schoolData.created_at).getTime();
+          const expectedEndMs = schoolCreatedMs + 15 * 24 * 60 * 60 * 1000;
+          const currentTrialEndMs = subscription.trial_end_at ? new Date(subscription.trial_end_at).getTime() : 0;
+
+          if (currentTrialEndMs > expectedEndMs + 3600000) {
+            subscription.trial_start_at = schoolData.created_at;
+            subscription.trial_end_at = new Date(expectedEndMs).toISOString();
+            try {
+              await supabase.from("subscriptions").update({
+                trial_start_at: subscription.trial_start_at,
+                trial_end_at: subscription.trial_end_at,
+              }).eq("id", subscription.id);
+            } catch {}
           }
         }
 
