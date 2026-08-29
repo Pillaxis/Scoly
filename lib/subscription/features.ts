@@ -483,6 +483,15 @@ export function getTrialTimeRemaining(subscription: ScolySubscription | null | u
 
   const now = Date.now();
   const trialEnd = new Date(subscription.trial_end_at).getTime();
+  if (isNaN(trialEnd)) {
+    return {
+      daysRemaining: 0,
+      hoursRemaining: 0,
+      isExpired: false,
+      message: "",
+      badgeLabel: "",
+    };
+  }
   const diffMs = trialEnd - now;
 
   if (diffMs <= 0) {

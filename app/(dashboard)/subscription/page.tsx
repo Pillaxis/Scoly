@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   Crown,
   CheckCircle2,
@@ -32,8 +31,7 @@ import {
 } from "@/lib/subscription/features";
 import { SubscriptionPlan, SubscriptionBillingPeriod, FeatureKey } from "@/types/subscription";
 
-function SubscriptionPageContent() {
-  const searchParams = useSearchParams();
+export default function SubscriptionPage() {
   const { subscription, school, currentUser, upgradeSubscription } = useScoly();
 
   const [billingPeriod, setBillingPeriod] = useState<SubscriptionBillingPeriod>("yearly");
@@ -45,11 +43,20 @@ function SubscriptionPageContent() {
 
   // Auto-select plan from URL query param if present
   useEffect(() => {
-    const planParam = searchParams?.get("plan") as SubscriptionPlan;
-    if (planParam === "start" || planParam === "pro" || planParam === "premium") {
-      setSelectedPlanForCheckout(planParam);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const planParam = params.get("plan") as SubscriptionPlan;
+      if (planParam === "start" || planParam === "pro" || planParam === "premium") {
+        setSelectedPlanForCheckout(planParam);
+      }
     }
-  }, [searchParams]);
+  }, []);
+
+  useEffect(() => {
+    if (!phoneForPayment && (currentUser?.phone || school?.phone)) {
+      setPhoneForPayment(currentUser?.phone || school?.phone || "");
+    }
+  }, [currentUser, school, phoneForPayment]);
 
   const isTrial = subscription?.status === "trialing";
   const isExpired =
@@ -775,19 +782,5 @@ function SubscriptionPageContent() {
         </div>
       )}
     </div>
-  );
-}
-
-export default function SubscriptionPage() {
-  return (
-    <React.Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
-      <SubscriptionPageContent />
-    </React.Suspense>
   );
 }

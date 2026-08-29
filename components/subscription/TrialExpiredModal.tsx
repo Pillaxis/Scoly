@@ -1,7 +1,6 @@
 "use client";
 
-import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Lock, ShieldCheck, Check, Sparkles, Crown, ArrowRight } from "lucide-react";
 import { useScoly } from "@/lib/store";
 
@@ -11,6 +10,7 @@ interface TrialExpiredModalProps {
 
 export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { subscription } = useScoly();
 
   const isTrial = subscription?.status === "trialing";
@@ -18,7 +18,7 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
     subscription?.status === "expired" ||
     (isTrial && subscription?.trial_end_at && new Date() > new Date(subscription.trial_end_at));
 
-  const shouldShow = isOpen !== undefined ? isOpen : isExpired;
+  const shouldShow = (isOpen !== undefined ? isOpen : isExpired) && pathname !== "/subscription";
 
   if (!shouldShow) return null;
 
