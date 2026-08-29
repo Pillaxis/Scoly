@@ -10,27 +10,27 @@ import {
   AlertTriangle,
   ArrowRight,
   Plus,
-  Trash2,
   Calculator,
-  ShieldCheck,
-  School as SchoolIcon,
-  Users,
   Check,
   CreditCard,
-  Layers,
   ChevronDown,
   ChevronUp,
+  RefreshCw,
+  X,
+  FileUp,
 } from "lucide-react";
 import { SchoolClass, TuitionPlan, TuitionInstallment } from "@/types/scoly";
-import { ImportModal } from "@/components/import/ImportModal";
-import { ImportSourceType } from "@/types/import";
+import { ImportSourceType, ValidatedImportRow } from "@/types/import";
 import { useScoly } from "@/lib/store";
 import { validateTuitionPlan, saveTuitionPlan } from "@/lib/services/tuition.service";
-
 import { parseExcelOrCsvFile, ParsedSheetData } from "@/lib/import/parsers/excel-csv-parser";
+import { detectColumnMapping } from "@/lib/import/mappers/column-detector";
+import { validateImportRows } from "@/lib/import/validation/data-validator";
+import { checkDuplicatesAgainstExistingStudents } from "@/lib/import/validation/duplicate-checker";
+import { executeBatchImport } from "@/lib/import/batch/batch-processor";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ÉTAPE 1 : IMPORTER LES ÉLÈVES
+// ÉTAPE 1 : IMPORTER LES ÉLÈVES (ANALYSE SOBRE DIRECTE SANS FENÊTRE CLIGNOTANTE)
 // ─────────────────────────────────────────────────────────────────────────────
 export function Step1ImportStudents({
   onContinue,
@@ -39,25 +39,79 @@ export function Step1ImportStudents({
   onContinue: () => void;
   onSkip?: () => void;
 }) {
-  const { students, classes } = useScoly();
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importSource, setImportSource] = useState<ImportSourceType>("excel");
-  const [initialSheetData, setInitialSheetData] = useState<ParsedSheetData | null>(null);
-  const [initialFileName, setInitialFileName] = useState<string>("");
+  const {
+    students,
+    classes,
+    school,
+    academicYear,
+    addStudent,
+    updateStudent,
+    addPayment,
+    logAudit,
+    recordImportBatch,
+    syncLocalToSupabase,
+  } = useScoly();
+
   const [isParsing, setIsParsing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<string>("");
   const [parseError, setParseError] = useState<string>("");
+
+  // In-step file analysis state
+  const [analyzedFile, setAnalyzedFile] = useState<{
+    fileName: string;
+    sourceType: ImportSourceType;
+    rows: ValidatedImportRow[];
+    classesDetected: string[];
+    paymentsCount: number;
+    paymentsTotal: number;
+    parentsCount: number;
+  } | null>(null);
+
+  // Sheets modal state (inline)
+  const [isSheetsInputOpen, setIsSheetsInputOpen] = useState(false);
+  const [sheetsUrl, setSheetsUrl] = useState("");
 
   const excelInputRef = React.useRef<HTMLInputElement>(null);
   const pdfInputRef = React.useRef<HTMLInputElement>(null);
+  const photoInputRef = React.useRef<HTMLInputElement>(null);
 
-  const openImport = (source: ImportSourceType) => {
-    setInitialSheetData(null);
-    setInitialFileName("");
-    setImportSource(source);
-    setIsImportModalOpen(true);
+  // Analyze file and compute summary directly
+  const processSheetData = (fileName: string, sheetData: ParsedSheetData, sourceType: ImportSourceType) => {
+    const detectedMappings = detectColumnMapping(sheetData.headers);
+    const validated = validateImportRows(sheetData.rows, detectedMappings, classes);
+    const withDuplicates = checkDuplicatesAgainstExistingStudents(validated, students);
+
+    // Extract unique classes
+    const uniqueClasses = Array.from(
+      new Set(
+        withDuplicates
+          .map((r) => r.parsedStudent.class_name?.trim())
+          .filter((c): c is string => Boolean(c && c.length > 0))
+      )
+    );
+
+    // Compute payments
+    const paymentsRows = withDuplicates.filter((r) => r.parsedPayment && r.parsedPayment.amount > 0);
+    const totalPaymentsAmount = paymentsRows.reduce((sum, r) => sum + (r.parsedPayment?.amount || 0), 0);
+
+    // Compute parents with phones
+    const parentsWithPhone = withDuplicates.filter(
+      (r) => r.parsedParent?.phone_primary && r.parsedParent.phone_primary !== "—"
+    );
+
+    setAnalyzedFile({
+      fileName,
+      sourceType,
+      rows: withDuplicates,
+      classesDetected: uniqueClasses,
+      paymentsCount: paymentsRows.length,
+      paymentsTotal: totalPaymentsAmount,
+      parentsCount: parentsWithPhone.length,
+    });
   };
 
-  // Direct device file handler: Opens file immediately, parses it, and launches preview
+  // Direct device file handler
   const handleDeviceFile = async (file: File, isPdf = false) => {
     setParseError("");
     setIsParsing(true);
@@ -83,10 +137,7 @@ export function Step1ImportStudents({
           totalRows: data.totalRows || 0,
         };
 
-        setInitialSheetData(sheetData);
-        setInitialFileName(file.name);
-        setImportSource("excel");
-        setIsImportModalOpen(true);
+        processSheetData(file.name, sheetData, "excel");
       } else {
         const result = await parseExcelOrCsvFile(file);
         if (result.sheetNames.length === 0) {
@@ -97,10 +148,7 @@ export function Step1ImportStudents({
           throw new Error("La feuille sélectionnée ne contient aucune ligne.");
         }
 
-        setInitialSheetData(sheet);
-        setInitialFileName(file.name);
-        setImportSource("excel");
-        setIsImportModalOpen(true);
+        processSheetData(file.name, sheet, "excel");
       }
     } catch (err: any) {
       setParseError(err.message || "Erreur lors de la lecture du fichier.");
@@ -109,10 +157,92 @@ export function Step1ImportStudents({
     }
   };
 
+  // Google Sheets import handler
+  const handleFetchGoogleSheets = async () => {
+    if (!sheetsUrl.trim()) return;
+    setParseError("");
+    setIsParsing(true);
+    try {
+      const res = await fetch("/api/import/google-sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: sheetsUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Impossible d'importer le tableau Google Sheets.");
+      }
+      const sheetData: ParsedSheetData = {
+        sheetName: "Google Sheets",
+        headers: data.headers || [],
+        rows: data.rows || [],
+        totalRows: (data.rows || []).length,
+      };
+      processSheetData("Google Sheets en ligne", sheetData, "google_sheets");
+      setIsSheetsInputOpen(false);
+    } catch (err: any) {
+      setParseError(err.message || "Erreur lors de la récupération du Google Sheets.");
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // Confirm import and batch execute
+  const handleConfirmImport = async () => {
+    if (!analyzedFile || analyzedFile.rows.length === 0) return;
+    setIsImporting(true);
+    setImportProgress("Importation en cours...");
+
+    try {
+      const summary = await executeBatchImport({
+        rows: analyzedFile.rows,
+        sourceType: analyzedFile.sourceType,
+        fileName: analyzedFile.fileName,
+        academicYearId: academicYear.id,
+        academicYearName: academicYear.name,
+        school,
+        existingStudents: students,
+        availableClasses: classes,
+        batchSize: 50,
+        onProgress: (p) => {
+          setImportProgress(`Importation : ${p.processedRows}/${p.totalRows} élèves...`);
+        },
+        onAddStudent: addStudent,
+        onUpdateStudent: updateStudent,
+        onAddPayment: addPayment,
+        onLogAudit: logAudit,
+      });
+
+      // Record batch record
+      recordImportBatch({
+        id: summary.batchId,
+        school_id: school.id,
+        academic_year_id: academicYear.id,
+        source_type: analyzedFile.sourceType,
+        file_name: analyzedFile.fileName,
+        total_rows: summary.totalDetected,
+        imported_students_count: summary.studentsImported,
+        imported_payments_count: summary.paymentsImported,
+        errors_count: summary.errorsCount,
+        duplicates_count: summary.rowsSkipped,
+        payload_summary: summary,
+        created_at: summary.importedAt,
+      });
+
+      syncLocalToSupabase().catch(() => {});
+      setAnalyzedFile(null);
+      onContinue();
+    } catch (err: any) {
+      setParseError(err.message || "Erreur lors de l'enregistrement des données.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const hasStudents = students.length > 0;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <div className="space-y-5 animate-in fade-in duration-150">
       {/* Hidden file inputs for direct device selection */}
       <input
         ref={excelInputRef}
@@ -138,6 +268,19 @@ export function Step1ImportStudents({
           }
         }}
       />
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleDeviceFile(e.target.files[0], false);
+            e.target.value = "";
+          }
+        }}
+      />
 
       {/* Header épuré */}
       <div className="space-y-1">
@@ -150,26 +293,129 @@ export function Step1ImportStudents({
       </div>
 
       {parseError && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{parseError}</span>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{parseError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setParseError("")}
+            className="p-1 hover:bg-rose-100 rounded text-rose-700 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* If students are already present */}
-      {hasStudents ? (
-        <div className="p-5 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                <CheckCircle2 className="w-5 h-5" />
+      {/* State A: File Analyzed - Display Clean Sober Analysis */}
+      {analyzedFile ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-sm">
+          {/* File Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
+                <FileSpreadsheet className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-extrabold text-emerald-950">
-                  {students.length} élève{students.length > 1 ? "s" : ""} déjà importé{students.length > 1 ? "s" : ""}
+                <h3 className="font-extrabold text-xs text-slate-900">{analyzedFile.fileName}</h3>
+                <span className="text-[11px] text-slate-400">Analyse terminée avec succès</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAnalyzedFile(null)}
+              disabled={isImporting}
+              className="text-xs text-slate-500 hover:text-slate-800 font-semibold transition-colors cursor-pointer px-2.5 py-1 rounded-lg hover:bg-slate-100"
+            >
+              Changer de fichier
+            </button>
+          </div>
+
+          {/* Analysis Summary Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Élèves détectés</span>
+              <p className="text-base font-black text-slate-900">
+                {analyzedFile.rows.length} élève{analyzedFile.rows.length > 1 ? "s" : ""}
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Classes identifiées</span>
+              <p className="text-xs font-bold text-slate-800 truncate">
+                {analyzedFile.classesDetected.length > 0
+                  ? analyzedFile.classesDetected.join(", ")
+                  : "Classe par défaut"}
+              </p>
+            </div>
+
+            {analyzedFile.paymentsCount > 0 && (
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                <span className="text-slate-400 font-bold uppercase text-[10px]">Paiements initiaux</span>
+                <p className="text-xs font-bold text-emerald-700">
+                  {analyzedFile.paymentsCount} versement{analyzedFile.paymentsCount > 1 ? "s" : ""} (
+                  {analyzedFile.paymentsTotal.toLocaleString("fr-FR")} FCFA)
+                </p>
+              </div>
+            )}
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Contacts parents</span>
+              <p className="text-xs font-bold text-slate-800">
+                {analyzedFile.parentsCount} numéro{analyzedFile.parentsCount > 1 ? "s" : ""} associé{analyzedFile.parentsCount > 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
+            {onSkip && (
+              <button
+                type="button"
+                onClick={onSkip}
+                disabled={isImporting}
+                className="text-xs text-slate-500 hover:text-slate-800 font-semibold transition-colors cursor-pointer"
+              >
+                Passer pour l&apos;instant
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleConfirmImport}
+              disabled={isImporting}
+              className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ml-auto shadow-sm"
+            >
+              {isImporting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>{importProgress || "Importation..."}</span>
+                </>
+              ) : (
+                <>
+                  <span>Importer ces {analyzedFile.rows.length} élèves</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : hasStudents ? (
+        /* State B: Students already in store */
+        <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-extrabold text-emerald-950">
+                  {students.length} élève{students.length > 1 ? "s" : ""} enregistré{students.length > 1 ? "s" : ""}
                 </h3>
-                <p className="text-xs text-emerald-700">
-                  Répartis dans {classes.length} classe{classes.length > 1 ? "s" : ""} détectée{classes.length > 1 ? "s" : ""}.
+                <p className="text-[11px] text-emerald-700">
+                  Dans {classes.length} classe{classes.length > 1 ? "s" : ""}.
                 </p>
               </div>
             </div>
@@ -177,32 +423,12 @@ export function Step1ImportStudents({
             <button
               type="button"
               onClick={() => excelInputRef.current?.click()}
-              className="px-3 py-1.5 bg-white hover:bg-emerald-100/50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+              className="px-2.5 py-1.5 bg-white text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
               <span>Ajouter d&apos;autres élèves</span>
             </button>
           </div>
-
-          {/* Classes pill list preview */}
-          {classes.length > 0 && (
-            <div className="pt-2 border-t border-emerald-200/60 flex flex-wrap gap-1.5 items-center">
-              <span className="text-[11px] font-bold text-emerald-900 mr-1">Classes :</span>
-              {classes.slice(0, 8).map((c) => (
-                <span
-                  key={c.id}
-                  className="px-2 py-0.5 bg-white text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold"
-                >
-                  {c.name}
-                </span>
-              ))}
-              {classes.length > 8 && (
-                <span className="text-xs text-emerald-700 font-semibold">
-                  +{classes.length - 8} autres
-                </span>
-              )}
-            </div>
-          )}
 
           <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
             {onSkip && (
@@ -218,32 +444,32 @@ export function Step1ImportStudents({
             <button
               type="button"
               onClick={onContinue}
-              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ml-auto"
+              className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ml-auto"
             >
               <span>Continuer vers les tarifs</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       ) : (
-        /* 4 Simple Direct Import Options */
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        /* State C: 4 Simple Clean Import Options */
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {/* Option 1: Excel / CSV (Direct Device File Selector) */}
             <button
               type="button"
               onClick={() => excelInputRef.current?.click()}
               disabled={isParsing}
-              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+              className="p-3.5 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3"
             >
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                <FileSpreadsheet className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <FileSpreadsheet className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs font-extrabold text-slate-900">
                   Fichier Excel ou CSV
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
+                <p className="text-[10px] text-slate-400 mt-0.5">
                   Depuis votre ordinateur ou téléphone
                 </p>
               </div>
@@ -254,16 +480,16 @@ export function Step1ImportStudents({
               type="button"
               onClick={() => pdfInputRef.current?.click()}
               disabled={isParsing}
-              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+              className="p-3.5 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3"
             >
-              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-800 flex items-center justify-center shrink-0">
+                <FileText className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs font-extrabold text-slate-900">
                   Document PDF
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
+                <p className="text-[10px] text-slate-400 mt-0.5">
                   Liste imprimée ou registre PDF
                 </p>
               </div>
@@ -272,18 +498,19 @@ export function Step1ImportStudents({
             {/* Option 3: Google Sheets */}
             <button
               type="button"
-              onClick={() => openImport("google_sheets")}
-              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+              onClick={() => setIsSheetsInputOpen(!isSheetsInputOpen)}
+              disabled={isParsing}
+              className="p-3.5 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3"
             >
-              <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
-                <Link2 className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
+                <Link2 className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs font-extrabold text-slate-900">
                   Google Sheets
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Lien de partage de tableau en ligne
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Lien de partage en ligne
                 </p>
               </div>
             </button>
@@ -291,22 +518,49 @@ export function Step1ImportStudents({
             {/* Option 4: Photo / Caméra */}
             <button
               type="button"
-              onClick={() => openImport("photo_ocr")}
-              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={isParsing}
+              className="p-3.5 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3"
             >
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
-                <Camera className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
+                <Camera className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs font-extrabold text-slate-900">
                   Photo de registre (OCR)
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Photo de registre papier ou feuille
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Photo de registre papier
                 </p>
               </div>
             </button>
           </div>
+
+          {/* Inline Google Sheets input */}
+          {isSheetsInputOpen && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 animate-in fade-in">
+              <label className="text-[11px] font-bold text-slate-700 block">
+                Collez le lien Google Sheets :
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  value={sheetsUrl}
+                  onChange={(e) => setSheetsUrl(e.target.value)}
+                  className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                <button
+                  type="button"
+                  onClick={handleFetchGoogleSheets}
+                  disabled={isParsing || !sheetsUrl.trim()}
+                  className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  {isParsing ? "Chargement..." : "Analyser"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Action passer pour l'instant */}
           {onSkip && (
@@ -322,19 +576,6 @@ export function Step1ImportStudents({
           )}
         </div>
       )}
-
-      {/* Modal d'importation unifiée */}
-      <ImportModal
-        isOpen={isImportModalOpen}
-        initialSource={importSource}
-        initialSheetData={initialSheetData}
-        initialFileName={initialFileName}
-        onClose={() => {
-          setIsImportModalOpen(false);
-          setInitialSheetData(null);
-          setInitialFileName("");
-        }}
-      />
     </div>
   );
 }

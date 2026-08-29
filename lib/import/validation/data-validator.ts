@@ -82,10 +82,8 @@ export function validateImportRows(
     let gender: "M" | "F" = "M";
     if (genderVal.startsWith("F") || genderVal === "FILLE" || genderVal === "FEMININ" || genderVal === "FEMALE") {
       gender = "F";
-    } else if (genderVal.startsWith("M") || genderVal === "GARCON" || genderVal === "MASCULIN" || genderVal === "MALE") {
+    } else {
       gender = "M";
-    } else if (genderVal) {
-      warnings.push(`Genre '${genderVal}' non standard (défini par défaut à Masculin).`);
     }
 
     // 4. Matricule
