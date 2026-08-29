@@ -90,10 +90,12 @@ export function ImportModal({
   });
 
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [batchErrorMessage, setBatchErrorMessage] = useState<string>("");
 
   // Reset state on open: Jump directly to PREVIEW_VALIDATION or INPUT_DATA
   useEffect(() => {
     if (isOpen) {
+      setBatchErrorMessage("");
       if (initialSheetData) {
         setSourceFileName(initialFileName || "Fichier importé");
         setActiveSheetData(initialSheetData);
@@ -155,6 +157,7 @@ export function ImportModal({
   const handleStartImport = async () => {
     if (validatedRows.length === 0) return;
 
+    setBatchErrorMessage("");
     setCurrentStep("BATCH_PROGRESS");
 
     try {
@@ -198,7 +201,7 @@ export function ImportModal({
       syncLocalToSupabase().catch((err) => console.debug("Cloud sync post-import notice:", err));
     } catch (err: any) {
       console.error("Batch import error:", err);
-      alert(`Erreur lors de l'importation par lots : ${err.message || "Erreur inconnue"}`);
+      setBatchErrorMessage(`Erreur lors de l'importation : ${err.message || "Erreur inconnue"}`);
       setCurrentStep("PREVIEW_VALIDATION");
     }
   };
@@ -367,12 +370,20 @@ export function ImportModal({
 
           {/* Étape 4 : Prévisualisation & Contrôle des Doublons */}
           {currentStep === "PREVIEW_VALIDATION" && (
-            <PreviewValidationGrid
-              rows={validatedRows}
-              onUpdateRows={setValidatedRows}
-              onProceedToImport={handleStartImport}
-              onBack={() => setCurrentStep("COLUMN_MAPPING")}
-            />
+            <div className="space-y-4">
+              {batchErrorMessage && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2 font-medium">
+                  <X className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{batchErrorMessage}</span>
+                </div>
+              )}
+              <PreviewValidationGrid
+                rows={validatedRows}
+                onUpdateRows={setValidatedRows}
+                onProceedToImport={handleStartImport}
+                onBack={() => setCurrentStep("COLUMN_MAPPING")}
+              />
+            </div>
           )}
 
           {/* Étape 5 : Barre de Progression par Lots */}

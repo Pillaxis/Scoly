@@ -108,16 +108,20 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
 
           // Enregistrement d'un paiement si présent
           if (row.parsedPayment && row.parsedPayment.amount > 0) {
-            onAddPayment({
-              student_id: targetId,
-              amount: row.parsedPayment.amount,
-              payment_method: row.parsedPayment.payment_method,
-              payment_date: row.parsedPayment.payment_date,
-              transaction_ref: row.parsedPayment.transaction_ref,
-              notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
-              recorded_by_name: "Import Intelligent",
-            });
-            paymentsImported++;
+            try {
+              onAddPayment({
+                student_id: targetId,
+                amount: row.parsedPayment.amount,
+                payment_method: row.parsedPayment.payment_method || "cash",
+                payment_date: row.parsedPayment.payment_date,
+                transaction_ref: row.parsedPayment.transaction_ref,
+                notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
+                recorded_by_name: "Import Intelligent",
+              });
+              paymentsImported++;
+            } catch (payErr) {
+              console.warn(`[Batch Import] Payment skipped for updated student ${targetId}:`, payErr);
+            }
           }
           continue;
         }
@@ -133,6 +137,13 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
         classId = found ? found.id : availableClasses[0]?.id || "cls-default";
       }
 
+      // S'assurer que le tarif couvre le paiement importé si renseigné
+      const importedPaymentAmount = row.parsedPayment?.amount || 0;
+      let effectiveTuition = row.parsedStudent.custom_tuition;
+      if (importedPaymentAmount > 0 && (!effectiveTuition || effectiveTuition < importedPaymentAmount)) {
+        effectiveTuition = importedPaymentAmount;
+      }
+
       const createdStudent = onAddStudent({
         first_name: row.parsedStudent.first_name,
         last_name: row.parsedStudent.last_name,
@@ -141,7 +152,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
         class_id: classId,
         class_name: row.parsedStudent.class_name,
         matricule: row.parsedStudent.matricule,
-        custom_tuition: row.parsedStudent.custom_tuition,
+        custom_tuition: effectiveTuition,
         discount_amount: row.parsedStudent.discount_amount,
         discount_reason: row.parsedStudent.discount_reason,
         parent_name: row.parsedParent?.full_name || `Parent de ${row.parsedStudent.last_name}`,
@@ -159,16 +170,20 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
 
       // Enregistrement du paiement associé
       if (row.parsedPayment && row.parsedPayment.amount > 0) {
-        onAddPayment({
-          student_id: createdStudent.id,
-          amount: row.parsedPayment.amount,
-          payment_method: row.parsedPayment.payment_method,
-          payment_date: row.parsedPayment.payment_date,
-          transaction_ref: row.parsedPayment.transaction_ref,
-          notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
-          recorded_by_name: "Import Intelligent",
-        });
-        paymentsImported++;
+        try {
+          onAddPayment({
+            student_id: createdStudent.id,
+            amount: row.parsedPayment.amount,
+            payment_method: row.parsedPayment.payment_method || "cash",
+            payment_date: row.parsedPayment.payment_date,
+            transaction_ref: row.parsedPayment.transaction_ref,
+            notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
+            recorded_by_name: "Import Intelligent",
+          });
+          paymentsImported++;
+        } catch (payErr) {
+          console.warn(`[Batch Import] Payment skipped for new student ${createdStudent.id}:`, payErr);
+        }
       }
     }
   }
