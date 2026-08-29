@@ -6,7 +6,7 @@ import { useScoly } from "@/lib/store";
 import { formatFCFA } from "@/lib/utils";
 
 export function MetricCards() {
-  const { dashboardMetrics, payments, students } = useScoly();
+  const { dashboardMetrics, payments, students, getStudentFinancialSummary } = useScoly();
 
   // Real calculation of today vs yesterday
   const { trendText, trendPositive, todayCount } = useMemo(() => {
@@ -166,9 +166,9 @@ export function MetricCards() {
             </div>
 
             <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-100 flex items-center justify-between">
-              <span>Avec avance/crédit :</span>
-              <strong className="font-mono text-blue-600 font-bold">
-                {dashboardMetrics.students_credit} élève(s)
+              <span>Soldés à 100% :</span>
+              <strong className="font-mono text-emerald-600 font-bold">
+                {students.filter(s => getStudentFinancialSummary(s.id).balance_due === 0).length} élève(s)
               </strong>
             </p>
           </div>

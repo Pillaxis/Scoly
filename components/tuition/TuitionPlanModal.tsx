@@ -258,7 +258,7 @@ export function TuitionPlanModal({
     isTotalAmountValid &&
     hasInstallments &&
     areInstallmentsValid &&
-    !isOverflown;
+    isBalanced;
 
   // Preset Splitting (1, 2, 3, 4 tranches with integer precision)
   const applyPreset = (count: number) => {

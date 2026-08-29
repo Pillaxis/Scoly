@@ -101,11 +101,11 @@ export default function CGUPage() {
                 4
               </div>
               <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                Garantie 30 Jours Satisfait ou Remboursé
+                Période d&apos;Essai Gratuit de 30 Jours
               </h2>
             </div>
             <p className="pl-11 text-slate-600">
-              Tout paiement d&apos;abonnement donne droit à une <strong>garantie de remboursement intégral de 30 jours</strong>. Si la solution ne répond pas aux attentes de l&apos;établissement, un simple message au support permet d&apos;obtenir le remboursement complet.
+              Tout nouvel établissement bénéficie d&apos;une <strong>période d&apos;essai gratuit de 30 jours</strong> sans engagement et sans carte bancaire pour tester l&apos;ensemble des fonctionnalités de la plateforme. À l&apos;issue de cet essai, l&apos;établissement choisit la formule adaptée à sa taille pour continuer.
             </p>
           </section>
 

@@ -898,7 +898,7 @@ export default function SettingsPage() {
               </h3>
             </div>
             <p className="text-xs text-slate-600">
-              Gérez votre formule START ou PRO, vos options de facturation et votre garantie de remboursement 30 jours.
+              Gérez votre formule START, PRO ou PREMIUM et vos options de facturation.
             </p>
           </div>
 

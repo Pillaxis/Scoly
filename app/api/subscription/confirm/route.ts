@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { calculateSubscriptionDates, PLAN_PRICING } from "@/lib/subscription/features";
+import { calculateSubscriptionDates } from "@/lib/subscription/features";
 import { SubscriptionPlan, SubscriptionBillingPeriod } from "@/types/subscription";
 
 /**
@@ -10,7 +10,6 @@ import { SubscriptionPlan, SubscriptionBillingPeriod } from "@/types/subscriptio
  * - Vérifie le paiement réel.
  * - Met à jour la table Supabase `subscriptions`.
  * - Active immédiatement la période payée (1 mois ou 12 mois).
- * - Calcule la période de remboursement de 30 jours (qui commence le jour du paiement).
  * - Enregistre une entrée dans les logs d'audit.
  */
 export async function POST(req: NextRequest) {
@@ -42,8 +41,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (plan !== "start" && plan !== "pro") {
-      return NextResponse.json({ error: "Forfait invalide (start ou pro attendu)" }, { status: 400 });
+    if (plan !== "start" && plan !== "pro" && plan !== "premium") {
+      return NextResponse.json({ error: "Forfait invalide (start, pro ou premium attendu)" }, { status: 400 });
     }
 
     if (billing_period !== "monthly" && billing_period !== "yearly") {
@@ -62,7 +61,6 @@ export async function POST(req: NextRequest) {
       currency: "FCFA",
       subscription_start_at: dates.subscriptionStartAt,
       subscription_end_at: dates.subscriptionEndAt,
-      refund_eligible_until: dates.refundEligibleUntil,
       cancelled_at: null,
       last_payment_reference: transaction_id || `TX-${Date.now()}`,
       last_payment_method: payment_method || "fedapay_mobile_money",

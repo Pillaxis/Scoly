@@ -269,12 +269,12 @@ export function createTrialExpiredNotification(params: {
 
 export function createSubscriptionActivatedNotification(params: {
   schoolId: string;
-  plan: "start" | "pro";
+  plan: "start" | "pro" | "premium" | string;
   billingPeriod: "monthly" | "yearly";
   formattedEndDate: string;
 }): ScolyNotification {
   const { schoolId, plan, billingPeriod, formattedEndDate } = params;
-  const planLabel = plan === "pro" ? "SCOLY PRO" : "SCOLY START";
+  const planLabel = plan === "premium" ? "SCOLY PREMIUM" : plan === "pro" ? "SCOLY PRO" : "SCOLY START";
   const periodLabel = billingPeriod === "yearly" ? "annuel" : "mensuel";
 
   return {

@@ -230,18 +230,7 @@ export async function fetchClasses(schoolId: string, yearId?: string): Promise<S
 
     if (error || !data) return [];
 
-    const SEED_NAMES = new Set([
-      "CI", "CP", "CE1", "CE2", "CM1", "CM2",
-      "6ème A", "5ème A", "4ème A", "3ème A",
-      "2nde CD", "1ère D", "Terminale D"
-    ]);
-
-    let filtered = data;
-    if (data.length === 13 && data.every((c: any) => SEED_NAMES.has(c.name))) {
-      filtered = [];
-    }
-
-    return filtered.map((c: any) => ({
+    return data.map((c: any) => ({
       id: c.id,
       school_id: c.school_id,
       academic_year_id: c.academic_year_id,
@@ -568,8 +557,8 @@ export async function insertPaymentDb(
   if (!client) return { success: false };
 
   try {
-    // Try calling stored procedure first for atomic receipt counter and calculations
-    const rpcRes = await client.rpc("record_payment_v2", {
+    // 1. Try calling stored procedure record_payment_v3 (strict zero overpayment + atomic receipt)
+    let rpcRes = await client.rpc("record_payment_v3", {
       p_school_id: schoolId,
       p_academic_year_id: yearId,
       p_student_id: payment.student_id,
@@ -581,8 +570,27 @@ export async function insertPaymentDb(
       p_idempotency_key: payment.idempotency_key || null,
     });
 
+    if (rpcRes.error && rpcRes.error.message?.includes("function record_payment_v3") && rpcRes.error.message?.includes("does not exist")) {
+      // Fallback to record_payment_v2
+      rpcRes = await client.rpc("record_payment_v2", {
+        p_school_id: schoolId,
+        p_academic_year_id: yearId,
+        p_student_id: payment.student_id,
+        p_amount: payment.amount,
+        p_payment_method: payment.payment_method || "cash",
+        p_transaction_ref: payment.transaction_ref || null,
+        p_notes: payment.notes || null,
+        p_recorded_by: null,
+        p_idempotency_key: payment.idempotency_key || null,
+      });
+    }
+
     if (!rpcRes.error && rpcRes.data) {
       return { success: true, data: rpcRes.data };
+    }
+
+    if (rpcRes.error) {
+      throw new Error(rpcRes.error.message);
     }
 
     // Direct insert fallback if RPC not yet created
@@ -591,9 +599,9 @@ export async function insertPaymentDb(
       academic_year_id: yearId,
       student_id: payment.student_id,
       amount: payment.amount,
-      allocated_amount: payment.allocated_amount || payment.amount,
-      credit_amount: payment.credit_amount || 0,
-      is_advance: payment.is_advance || false,
+      allocated_amount: payment.amount,
+      credit_amount: 0,
+      is_advance: false,
       payment_date: payment.payment_date || new Date().toISOString().split("T")[0],
       payment_method: payment.payment_method || "cash",
       transaction_ref: payment.transaction_ref,
@@ -614,8 +622,8 @@ export async function insertPaymentDb(
       .single();
 
     return { success: !directErr, data: directData };
-  } catch {
-    return { success: false };
+  } catch (err: any) {
+    throw err;
   }
 }
 
@@ -1326,7 +1334,6 @@ export async function fetchSubscriptionDb(schoolId: string): Promise<ScolySubscr
       trial_end_at: data.trial_end_at,
       subscription_start_at: data.subscription_start_at,
       subscription_end_at: data.subscription_end_at,
-      refund_eligible_until: data.refund_eligible_until,
       cancelled_at: data.cancelled_at,
       last_payment_reference: data.last_payment_reference,
       last_payment_method: data.last_payment_method,
@@ -1372,7 +1379,6 @@ export async function upsertSubscriptionDb(
       trial_end_at: data.trial_end_at,
       subscription_start_at: data.subscription_start_at,
       subscription_end_at: data.subscription_end_at,
-      refund_eligible_until: data.refund_eligible_until,
       cancelled_at: data.cancelled_at,
       last_payment_reference: data.last_payment_reference,
       last_payment_method: data.last_payment_method,
@@ -1402,11 +1408,19 @@ export async function activatePaidSubscriptionDb(
     end.setMonth(end.getMonth() + 1);
   }
 
-  // 30-day money-back guarantee starts immediately on payment
-  const refundUntil = new Date(start);
-  refundUntil.setDate(refundUntil.getDate() + 30);
-
-  const priceAmount = amount || (plan === "pro" ? (billingPeriod === "yearly" ? 84000 : 10000) : (billingPeriod === "yearly" ? 42000 : 5000));
+  const priceAmount =
+    amount ||
+    (plan === "premium"
+      ? billingPeriod === "yearly"
+        ? 210000
+        : 25000
+      : plan === "pro"
+      ? billingPeriod === "yearly"
+        ? 84000
+        : 10000
+      : billingPeriod === "yearly"
+      ? 42000
+      : 5000);
 
   return upsertSubscriptionDb({
     school_id: schoolId,
@@ -1417,7 +1431,6 @@ export async function activatePaidSubscriptionDb(
     currency: "FCFA",
     subscription_start_at: start.toISOString(),
     subscription_end_at: end.toISOString(),
-    refund_eligible_until: refundUntil.toISOString(),
     last_payment_reference: transactionRef || `SUB-${Date.now()}`,
     last_payment_method: "fedapay_mobile_money",
     payment_provider: "fedapay",

@@ -30,25 +30,59 @@ export function FileUploadZone({ onFileParsed, onBack }: FileUploadZoneProps) {
   const handleFile = async (file: File) => {
     setErrorMessage("");
     const ext = file.name.split(".").pop()?.toLowerCase();
-    if (!ext || !["xlsx", "xls", "csv"].includes(ext)) {
-      setErrorMessage("Format de fichier non supporté. Veuillez sélectionner un fichier .xlsx, .xls ou .csv");
+    if (!ext || !["xlsx", "xls", "csv", "pdf"].includes(ext)) {
+      setErrorMessage("Format non supporté. Veuillez sélectionner un fichier .xlsx, .xls, .csv ou .pdf");
       return;
     }
 
-    if (file.size > 20 * 1024 * 1024) {
-      setErrorMessage("Le fichier est trop volumineux (limite max: 20 Mo).");
+    if (file.size > 25 * 1024 * 1024) {
+      setErrorMessage("Le fichier est trop volumineux (limite max: 25 Mo).");
       return;
     }
 
     setIsLoading(true);
     try {
-      const result = await parseExcelOrCsvFile(file);
-      if (result.sheetNames.length === 0) {
-        throw new Error("Aucune feuille de données détectée dans le fichier.");
-      }
+      if (ext === "pdf") {
+        // Use server-side PDF parser route
+        const formData = new FormData();
+        formData.append("file", file);
 
-      setParsedWorkbook(result);
-      setSelectedSheet(result.selectedSheetName);
+        const res = await fetch("/api/import/pdf", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Impossible d'extraire les données du fichier PDF.");
+        }
+
+        const result: ExcelWorkbookResult = {
+          fileName: file.name,
+          sheetNames: ["Document PDF"],
+          selectedSheetName: "Document PDF",
+          sheets: {
+            "Document PDF": {
+              sheetName: "Document PDF",
+              headers: data.headers || ["Nom & Prénom", "Classe", "Genre", "Matricule", "Parent / Contact"],
+              rows: data.rows || [],
+              totalRows: data.totalRows || 0,
+            },
+          },
+        };
+
+        setParsedWorkbook(result);
+        setSelectedSheet("Document PDF");
+      } else {
+        // Parse Excel or CSV
+        const result = await parseExcelOrCsvFile(file);
+        if (result.sheetNames.length === 0) {
+          throw new Error("Aucune feuille de données détectée dans le fichier.");
+        }
+
+        setParsedWorkbook(result);
+        setSelectedSheet(result.selectedSheetName);
+      }
     } catch (err: any) {
       setErrorMessage(`Erreur de lecture du fichier : ${err.message || "Fichier illisible"}`);
     } finally {
@@ -108,7 +142,7 @@ export function FileUploadZone({ onFileParsed, onBack }: FileUploadZoneProps) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.pdf"
             className="hidden"
             onChange={(e) => {
               if (e.target.files && e.target.files.length > 0) {
@@ -127,11 +161,11 @@ export function FileUploadZone({ onFileParsed, onBack }: FileUploadZoneProps) {
 
           <h3 className="text-base font-extrabold text-slate-900">
             {isLoading
-              ? "Analyse du fichier en cours..."
-              : "Glissez votre fichier Excel ou CSV ici"}
+              ? "Analyse du document en cours..."
+              : "Glissez votre fichier Excel, CSV ou PDF ici"}
           </h3>
           <p className="text-xs text-slate-500 max-w-md">
-            Formats acceptés : <strong>.xlsx</strong>, <strong>.xls</strong> ou <strong>.csv</strong> (jusqu&apos;à 20 Mo).
+            Formats acceptés : <strong>.xlsx</strong>, <strong>.xls</strong>, <strong>.csv</strong> ou <strong>.pdf</strong> (jusqu&apos;à 25 Mo).
           </p>
 
           <button
@@ -152,7 +186,7 @@ export function FileUploadZone({ onFileParsed, onBack }: FileUploadZoneProps) {
               <div>
                 <h4 className="font-extrabold text-slate-900 text-sm">{parsedWorkbook.fileName}</h4>
                 <p className="text-xs text-slate-500">
-                  {parsedWorkbook.sheetNames.length} feuille(s) détectée(s)
+                  {parsedWorkbook.sheetNames.length} source(s) détectée(s)
                 </p>
               </div>
             </div>
@@ -201,7 +235,7 @@ export function FileUploadZone({ onFileParsed, onBack }: FileUploadZoneProps) {
           {currentSheetData && (
             <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-700">Aperçu de la feuille :</span>
+                <span className="font-bold text-slate-700">Aperçu du document :</span>
                 <span className="font-extrabold text-blue-700">
                   {currentSheetData.totalRows} ligne(s) détectée(s)
                 </span>
@@ -235,7 +269,7 @@ export function FileUploadZone({ onFileParsed, onBack }: FileUploadZoneProps) {
           <span>Conseils pour un import sans erreur :</span>
         </div>
         <p className="text-[11px] text-blue-800 leading-relaxed pl-5">
-          Assurez-vous que la première ligne du tableau contient les intitulés des colonnes (ex : <em>Nom, Prénom, Classe, Téléphone, Montant</em>). L&apos;ordre des colonnes n&apos;a pas d&apos;importance.
+          Assurez-vous que le document contient les colonnes essentielles (ex : <em>Nom, Prénom, Classe, Téléphone</em>). Vous pourrez vérifier chaque ligne avant d&apos;enregistrer.
         </p>
       </div>
 

@@ -70,7 +70,7 @@ export function TrialCountdownBanner() {
         <div className="flex items-center gap-2 shrink-0">
           <div className="hidden lg:flex items-center gap-1 text-[11px] text-slate-600 bg-white/60 px-2 py-1 rounded-md border border-black/5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Garantie 30j après paiement</span>
+            <span>30 jours d&apos;essai gratuit</span>
           </div>
 
           <Link

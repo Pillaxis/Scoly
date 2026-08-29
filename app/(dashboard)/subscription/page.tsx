@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Sparkles,
   ShieldCheck,
-  Zap,
   ArrowRight,
   Clock,
   Check,
@@ -30,14 +29,12 @@ import {
   FEATURE_DEFINITIONS,
   PLAN_FEATURES,
   getTrialTimeRemaining,
-  isEligibleForRefund,
 } from "@/lib/subscription/features";
 import { SubscriptionPlan, SubscriptionBillingPeriod, FeatureKey } from "@/types/subscription";
 
 function SubscriptionPageContent() {
   const searchParams = useSearchParams();
-  const { subscription, school, currentUser, upgradeSubscription, cancelCurrentSubscription } = useScoly();
-
+  const { subscription, school, currentUser, upgradeSubscription } = useScoly();
 
   const [billingPeriod, setBillingPeriod] = useState<SubscriptionBillingPeriod>("yearly");
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<SubscriptionPlan | null>(null);
@@ -45,12 +42,11 @@ function SubscriptionPageContent() {
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [phoneForPayment, setPhoneForPayment] = useState(currentUser?.phone || school?.phone || "");
-  const [activeTab, setActiveTab] = useState<"plans" | "history">("plans");
 
   // Auto-select plan from URL query param if present
   useEffect(() => {
     const planParam = searchParams?.get("plan") as SubscriptionPlan;
-    if (planParam === "start" || planParam === "pro") {
+    if (planParam === "start" || planParam === "pro" || planParam === "premium") {
       setSelectedPlanForCheckout(planParam);
     }
   }, [searchParams]);
@@ -61,18 +57,9 @@ function SubscriptionPageContent() {
     (isTrial && subscription?.trial_end_at && new Date() > new Date(subscription.trial_end_at));
   const isPro = subscription?.plan === "pro" && subscription?.status === "active";
   const isStart = subscription?.plan === "start" && subscription?.status === "active";
+  const isPremium = subscription?.plan === "premium" && subscription?.status === "active";
 
   const trialInfo = isTrial ? getTrialTimeRemaining(subscription) : null;
-  const refundInfo = isEligibleForRefund(subscription);
-
-  // Pricing calculations
-  const startMonthly = PLAN_PRICING.start.monthly;
-  const startYearly = PLAN_PRICING.start.yearly;
-  const startYearlySavings = 12 * startMonthly - startYearly; // 18 000 FCFA
-
-  const proMonthly = PLAN_PRICING.pro.monthly;
-  const proYearly = PLAN_PRICING.pro.yearly;
-  const proYearlySavings = 12 * proMonthly - proYearly; // 36 000 FCFA
 
   // Handle Checkout submission
   const handleProceedPayment = async (plan: SubscriptionPlan) => {
@@ -92,7 +79,6 @@ function SubscriptionPageContent() {
           customer_name: currentUser?.full_name || school.name || "Directeur",
           customer_email: currentUser?.email || school.email || "directeur@scoly.tg",
           customer_phone: phoneForPayment || school.phone || "+22890000000",
-
         }),
       });
 
@@ -102,7 +88,7 @@ function SubscriptionPageContent() {
         throw new Error(data.error || "Impossible d'initialiser la transaction.");
       }
 
-      // If FedaPay returned a redirect payment URL, we can redirect or confirm simulation
+      // If FedaPay returned a redirect payment URL, redirect
       if (data.payment_url && !data.is_mock) {
         window.location.href = data.payment_url;
         return;
@@ -126,20 +112,22 @@ function SubscriptionPageContent() {
     }
   };
 
-  const featureList: { key: FeatureKey; name: string; icon: any; proOnly: boolean }[] = [
-    { key: "students_management", name: "Gestion des élèves, classes & scolarités", icon: Users, proOnly: false },
-    { key: "cash_receipts", name: "Encaissement en caisse & reçus PDF officiels", icon: QrCode, proOnly: false },
-    { key: "receipt_generation", name: "Génération de reçus thermiques et A4", icon: Layers, proOnly: false },
-    { key: "basic_reminders", name: "Rappels SMS individuels aux parents", icon: PhoneCall, proOnly: false },
-    { key: "excel_import", name: "Importation de listes d'élèves Excel / CSV", icon: FileSpreadsheet, proOnly: false },
-    { key: "basic_dashboard", name: "Tableau de bord financier & métriques clés", icon: LineChart, proOnly: false },
-    { key: "mobile_money_fedapay", name: "Paiements en ligne Mobile Money (TMoney, Moov, MTN, Orange)", icon: Smartphone, proOnly: true },
-    { key: "ai_ocr_scanner", name: "Scanner IA & OCR automatique de listes scolaires", icon: Zap, proOnly: true },
-    { key: "advanced_analytics", name: "Graphiques d'évolution et analytics avancés", icon: LineChart, proOnly: true },
-    { key: "google_sheets_sync", name: "Synchronisation Cloud Google Sheets en temps réel", icon: FileSpreadsheet, proOnly: true },
-    { key: "batch_reminders", name: "Campagnes de relances SMS & WhatsApp groupées", icon: BellRing, proOnly: true },
-    { key: "unlimited_staff", name: "Comptes collaborateurs illimités avec permissions", icon: Users, proOnly: true },
-    { key: "realtime_multidevice", name: "Multi-appareils en direct (PC, tablettes, smartphones)", icon: Layers, proOnly: true },
+  const featureList: { key: FeatureKey; name: string; icon: any; start: boolean; pro: boolean; premium: boolean }[] = [
+    { key: "students_management", name: "Gestion des élèves, classes & scolarités", icon: Users, start: true, pro: true, premium: true },
+    { key: "cash_receipts", name: "Encaissement en caisse & reçus REC-25 officiels", icon: QrCode, start: true, pro: true, premium: true },
+    { key: "receipt_generation", name: "Génération de reçus thermiques et A4 WhatsApp", icon: Layers, start: true, pro: true, premium: true },
+    { key: "basic_reminders", name: "Relances WhatsApp individuelles aux parents", icon: PhoneCall, start: true, pro: true, premium: true },
+    { key: "excel_import", name: "Importation listes d'élèves Excel, CSV & PDF", icon: FileSpreadsheet, start: true, pro: true, premium: true },
+    { key: "basic_dashboard", name: "Tableau de bord financier & indicateurs clés", icon: LineChart, start: true, pro: true, premium: true },
+    { key: "mobile_money_fedapay", name: "Paiements en ligne Mobile Money (TMoney, Flooz)", icon: Smartphone, start: false, pro: true, premium: true },
+    { key: "ai_ocr_scanner", name: "Scanner Caméra OCR des registres papier", icon: Sparkles, start: false, pro: true, premium: true },
+    { key: "advanced_analytics", name: "Graphiques d'évolution et camembert financier", icon: LineChart, start: false, pro: true, premium: true },
+    { key: "google_sheets_sync", name: "Synchronisation Cloud Google Sheets directe", icon: FileSpreadsheet, start: false, pro: true, premium: true },
+    { key: "batch_reminders", name: "Campagnes de relances groupées par classe", icon: BellRing, start: false, pro: true, premium: true },
+    { key: "unlimited_staff", name: "Comptes collaborateurs & permissions fines", icon: Users, start: false, pro: true, premium: true },
+    { key: "realtime_multidevice", name: "Synchronisation temps réel multi-appareils", icon: Layers, start: false, pro: true, premium: true },
+    { key: "multi_campus_management", name: "Gestion multi-campus & établissements", icon: Crown, start: false, pro: false, premium: true },
+    { key: "priority_dedicated_support", name: "Support dédié prioritaire 24/7 sur WhatsApp", icon: ShieldCheck, start: false, pro: false, premium: true },
   ];
 
   return (
@@ -156,16 +144,16 @@ function SubscriptionPageContent() {
             </h1>
           </div>
           <p className="text-slate-600 text-sm">
-            Choisissez la formule adaptée à votre établissement. Sans engagement caché, avec garantie 30 jours.
+            Choisissez la formule adaptée à la taille de votre école. Essai gratuit de 30 jours complet sans engagement.
           </p>
         </div>
 
-        {/* Guarantee Badge */}
+        {/* Security & Reliability Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl text-xs font-semibold shadow-xs">
           <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
           <div>
-            <div>Garantie Satisfait ou Remboursé 30 jours</div>
-            <div className="text-[10px] text-emerald-700 font-normal">Applicable dès la souscription payante</div>
+            <div>Période d&apos;essai 30 jours</div>
+            <div className="text-[10px] text-emerald-700 font-normal">Données sauvegardées en continu</div>
           </div>
         </div>
       </div>
@@ -183,17 +171,21 @@ function SubscriptionPageContent() {
               <h2 className="text-2xl font-black text-slate-900">
                 {isExpired
                   ? "Période d'essai expirée"
+                  : isPremium
+                  ? "SCOLY PREMIUM"
                   : isPro
                   ? "SCOLY PRO"
                   : isStart
                   ? "SCOLY START"
-                  : "Essai Gratuit 15 Jours (PRO)"}
+                  : "Essai Gratuit 30 Jours"}
               </h2>
 
               <span
                 className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider ${
                   isExpired
                     ? "bg-rose-100 text-rose-800 border border-rose-200"
+                    : isPremium
+                    ? "bg-purple-100 text-purple-900 border border-purple-300"
                     : isPro
                     ? "bg-amber-100 text-amber-900 border border-amber-300"
                     : isStart
@@ -208,19 +200,23 @@ function SubscriptionPageContent() {
             <p className="text-slate-600 text-xs sm:text-sm mt-1">
               {isExpired ? (
                 <span className="text-rose-600 font-medium">
-                  Votre période d&apos;essai de 15 jours est terminée. Vos données sont conservées. Choisissez un forfait pour débloquer votre espace.
+                  Votre période d&apos;essai de 30 jours est terminée. Vos données sont conservées. Choisissez un forfait pour débloquer votre espace.
                 </span>
               ) : isTrial ? (
                 <span>
-                  Il vous reste <strong className="text-emerald-700 font-bold">{trialInfo?.daysRemaining} jour(s)</strong> pour tester toutes les fonctionnalités PRO gratuitement.
+                  Il vous reste <strong className="text-emerald-700 font-bold">{trialInfo?.daysRemaining} jour(s)</strong> pour tester toutes les fonctionnalités sans restriction.
+                </span>
+              ) : isPremium ? (
+                <span>
+                  Formule intégrale active. Gestion multi-campus et support prioritaire 24/7.
                 </span>
               ) : isPro ? (
                 <span>
-                  Vous bénéficiez de toutes les fonctionnalités avancées et des automatisations intelligentes.
+                  Vous bénéficiez de toutes les fonctionnalités avancées, Mobile Money et scanner OCR.
                 </span>
               ) : (
                 <span>
-                  Forfait essentiel actif. Encaissements, élèves et reçus illimités en caisse.
+                  Forfait START actif jusqu&apos;à 100 élèves. Encaissements et reçus certifiés en caisse.
                 </span>
               )}
             </p>
@@ -231,7 +227,7 @@ function SubscriptionPageContent() {
             {isTrial && subscription?.trial_end_at && (
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <div className="text-slate-400 font-medium flex items-center gap-1 mb-0.5">
-                  <Clock className="w-3.5 h-3.5" /> Fin de l&apos;essai
+                  <Clock className="w-3.5 h-3.5" /> Fin de l&apos;essai gratuit
                 </div>
                 <div className="font-bold text-slate-800">
                   {new Date(subscription.trial_end_at).toLocaleDateString("fr-FR", {
@@ -246,7 +242,7 @@ function SubscriptionPageContent() {
             {subscription?.status === "active" && subscription.subscription_end_at && (
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <div className="text-slate-400 font-medium flex items-center gap-1 mb-0.5">
-                  <Calendar className="w-3.5 h-3.5" /> Renouvellement
+                  <Calendar className="w-3.5 h-3.5" /> Prochain renouvellement
                 </div>
                 <div className="font-bold text-slate-800">
                   {new Date(subscription.subscription_end_at).toLocaleDateString("fr-FR", {
@@ -254,17 +250,6 @@ function SubscriptionPageContent() {
                     month: "long",
                     year: "numeric",
                   })}
-                </div>
-              </div>
-            )}
-
-            {refundInfo.eligible && refundInfo.formattedEndDate && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl">
-                <div className="font-medium flex items-center gap-1 mb-0.5 text-emerald-700">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Garantie active
-                </div>
-                <div className="font-bold">
-                  Remboursement jusqu&apos;au {refundInfo.formattedEndDate} ({refundInfo.daysRemaining}j restants)
                 </div>
               </div>
             )}
@@ -278,7 +263,7 @@ function SubscriptionPageContent() {
           <button
             type="button"
             onClick={() => setBillingPeriod("monthly")}
-            className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               billingPeriod === "monthly"
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-600 hover:text-slate-900"
@@ -289,14 +274,14 @@ function SubscriptionPageContent() {
           <button
             type="button"
             onClick={() => setBillingPeriod("yearly")}
-            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               billingPeriod === "yearly"
-                ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm"
+                ? "bg-blue-600 text-white shadow-sm"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
             <span>Paiement Annuel</span>
-            <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-white/25 rounded-md tracking-wider">
+            <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-amber-400 text-slate-950 rounded-md tracking-wider">
               -30%
             </span>
           </button>
@@ -313,94 +298,78 @@ function SubscriptionPageContent() {
         </p>
       </div>
 
-      {/* ─── 4. PRICING CARDS (START vs PRO) ──────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
-        {/* START TIER */}
+      {/* ─── 4. PRICING CARDS (START, PRO, PREMIUM) ──────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto items-stretch">
+        {/* 1. START TIER */}
         <div
-          className={`relative p-6 sm:p-8 bg-white border-2 rounded-3xl shadow-sm transition-all flex flex-col justify-between ${
+          className={`relative p-6 sm:p-7 bg-white border-2 rounded-3xl shadow-sm transition-all flex flex-col justify-between ${
             isStart ? "border-blue-500 ring-4 ring-blue-50" : "border-slate-200 hover:border-slate-300"
           }`}
         >
           {isStart && (
             <div className="absolute -top-3.5 left-6 px-3 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase rounded-full shadow-sm">
-              Votre forfait actuel
+              Votre formule
             </div>
           )}
 
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="px-3 py-1 text-xs font-bold uppercase bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
-                START
+              <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+                100 élèves max
               </span>
-              <span className="text-xs text-slate-500">Pour démarrer en caisse</span>
             </div>
 
-            <h3 className="text-2xl font-black text-slate-900 mb-2">SCOLY START</h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-6">
-              L&apos;essentiel pour informatiser vos inscriptions, gérer vos scolarités et émettre des reçus officiels infalsifiables.
+            <h3 className="text-xl font-black text-slate-900 mb-1">SCOLY START</h3>
+            <p className="text-xs text-slate-600 leading-relaxed mb-4">
+              L&apos;essentiel pour informatiser vos inscriptions, gérer vos scolarités et émettre des reçus officiels.
             </p>
 
             {/* Price calculation */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-6">
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl mb-5">
               {billingPeriod === "monthly" ? (
                 <div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-slate-900">5 000</span>
-                    <span className="text-sm font-semibold text-slate-600">FCFA / mois</span>
+                    <span className="text-2xl font-black text-slate-900">5 000</span>
+                    <span className="text-xs font-semibold text-slate-600">FCFA / mois</span>
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-[11px] text-slate-500 mt-0.5">
                     Facturé 5 000 FCFA chaque mois
                   </div>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-slate-900">42 000</span>
-                    <span className="text-sm font-semibold text-slate-600">FCFA / an</span>
+                    <span className="text-2xl font-black text-slate-900">42 000</span>
+                    <span className="text-xs font-semibold text-slate-600">FCFA / an</span>
                   </div>
-                  <div className="text-xs text-emerald-700 font-bold mt-1">
-                    Soit 3 500 FCFA / mois (Économisez 18 000 FCFA)
-                  </div>
-                  <div className="text-[11px] text-slate-400 line-through mt-0.5">
-                    Au lieu de 60 000 FCFA / an
+                  <div className="text-xs text-emerald-700 font-bold mt-0.5">
+                    Soit 3 500 FCFA / mois (-30%)
                   </div>
                 </div>
               )}
             </div>
 
             {/* Features list */}
-            <div className="space-y-3 mb-8">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Inclus dans SCOLY START :
+            <div className="space-y-2.5 mb-6">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Inclus dans START :
               </div>
-              <ul className="space-y-2.5 text-xs text-slate-700">
-                <li className="flex items-center gap-2.5">
+              <ul className="space-y-2 text-xs text-slate-700">
+                <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Gestion illimitée des élèves & classes</span>
+                  <span>Jusqu&apos;à 100 élèves</span>
                 </li>
-                <li className="flex items-center gap-2.5">
+                <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Encaissement en espèces, chèques & virements</span>
+                  <span>Encaissement caisse & reçus REC-25</span>
                 </li>
-                <li className="flex items-center gap-2.5">
+                <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Édition de reçus avec QR Code de sécurité</span>
+                  <span>Relances WhatsApp individuelles</span>
                 </li>
-                <li className="flex items-center gap-2.5">
+                <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Import de fichiers Excel & CSV</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Rappels SMS individuels de scolarité</span>
-                </li>
-                <li className="flex items-center gap-2.5 text-slate-400">
-                  <X className="w-4 h-4 text-slate-300 shrink-0" />
-                  <span>Paiements en ligne FedaPay Mobile Money</span>
-                </li>
-                <li className="flex items-center gap-2.5 text-slate-400">
-                  <X className="w-4 h-4 text-slate-300 shrink-0" />
-                  <span>Scanner IA OCR de documents</span>
+                  <span>Import fichiers Excel, CSV & PDF</span>
                 </li>
               </ul>
             </div>
@@ -410,109 +379,93 @@ function SubscriptionPageContent() {
             type="button"
             onClick={() => setSelectedPlanForCheckout("start")}
             disabled={isStart && subscription?.billing_period === billingPeriod}
-            className={`w-full py-3 px-5 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               isStart && subscription?.billing_period === billingPeriod
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                : "bg-slate-900 hover:bg-slate-800 text-white shadow-md hover:scale-[1.01] active:scale-[0.99]"
+                : "bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
             }`}
           >
             <span>
               {isStart
                 ? subscription?.billing_period === billingPeriod
-                  ? "Forfait START Actif"
+                  ? "Forfait Actif"
                   : "Basculer vers START " + (billingPeriod === "yearly" ? "Annuel" : "Mensuel")
-                : "Choisir SCOLY START"}
+                : "Choisir START"}
             </span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* PRO TIER */}
+        {/* 2. PRO TIER */}
         <div
-          className={`relative p-6 sm:p-8 bg-gradient-to-b from-amber-50/40 via-white to-orange-50/20 border-2 rounded-3xl shadow-lg transition-all flex flex-col justify-between ${
+          className={`relative p-6 sm:p-7 bg-gradient-to-b from-amber-50/40 via-white to-orange-50/20 border-2 rounded-3xl shadow-lg transition-all flex flex-col justify-between ${
             isPro ? "border-amber-500 ring-4 ring-amber-100" : "border-amber-400 hover:border-amber-500"
           }`}
         >
-          <div className="absolute -top-3.5 right-6 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[11px] font-black uppercase tracking-wider rounded-full shadow-md flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            Recommandé pour les écoles
+          <div className="absolute -top-3.5 right-6 px-2.5 py-0.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-md flex items-center gap-1">
+            <Sparkles className="w-3 h-3" />
+            Recommandé
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="px-3 py-1 text-xs font-bold uppercase bg-amber-100 text-amber-900 rounded-lg border border-amber-300 flex items-center gap-1.5">
-                <Crown className="w-3.5 h-3.5 text-amber-600 fill-amber-500" />
-                PRO
+              <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase bg-amber-100 text-amber-900 rounded-lg border border-amber-300 flex items-center gap-1">
+                <Crown className="w-3 h-3 text-amber-600 fill-amber-500" />
+                500 élèves max
               </span>
-              <span className="text-xs text-amber-800 font-semibold">Toutes les fonctionnalités</span>
             </div>
 
-            <h3 className="text-2xl font-black text-slate-900 mb-2">SCOLY PRO</h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-6">
-              La solution complète pour automatiser la collecte, encaisser par Mobile Money, synchroniser en direct et déléguer sans risque.
+            <h3 className="text-xl font-black text-slate-900 mb-1">SCOLY PRO</h3>
+            <p className="text-xs text-slate-600 leading-relaxed mb-4">
+              Pour automatiser la collecte, encaisser par Mobile Money et numériser par caméra OCR.
             </p>
 
             {/* Price calculation */}
-            <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl mb-6">
+            <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl mb-5">
               {billingPeriod === "monthly" ? (
                 <div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-slate-900">10 000</span>
-                    <span className="text-sm font-semibold text-slate-600">FCFA / mois</span>
+                    <span className="text-2xl font-black text-slate-900">10 000</span>
+                    <span className="text-xs font-semibold text-slate-600">FCFA / mois</span>
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-[11px] text-slate-500 mt-0.5">
                     Facturé 10 000 FCFA chaque mois
                   </div>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-slate-900">84 000</span>
-                    <span className="text-sm font-semibold text-slate-600">FCFA / an</span>
+                    <span className="text-2xl font-black text-slate-900">84 000</span>
+                    <span className="text-xs font-semibold text-slate-600">FCFA / an</span>
                   </div>
-                  <div className="text-xs text-emerald-700 font-bold mt-1">
-                    Soit 7 000 FCFA / mois (Économisez 36 000 FCFA)
-                  </div>
-                  <div className="text-[11px] text-slate-400 line-through mt-0.5">
-                    Au lieu de 120 000 FCFA / an
+                  <div className="text-xs text-emerald-700 font-bold mt-0.5">
+                    Soit 7 000 FCFA / mois (-30%)
                   </div>
                 </div>
               )}
             </div>
 
             {/* Features list */}
-            <div className="space-y-3 mb-8">
-              <div className="text-xs font-bold uppercase tracking-wider text-amber-900 font-semibold">
-                Tout ce qui est dans START, plus :
+            <div className="space-y-2.5 mb-6">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900 font-semibold">
+                Tout START, plus :
               </div>
-              <ul className="space-y-2.5 text-xs text-slate-800 font-medium">
-                <li className="flex items-center gap-2.5">
+              <ul className="space-y-2 text-xs text-slate-800 font-medium">
+                <li className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Paiements en ligne FedaPay (TMoney, Flooz, MoMo, Wave, CB)</span>
+                  <span>Jusqu&apos;à 500 élèves enregistrés</span>
                 </li>
-                <li className="flex items-center gap-2.5">
+                <li className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Scanner IA & OCR automatique de listes scolaires</span>
+                  <span>Paiements en ligne FedaPay (TMoney, Flooz)</span>
                 </li>
-                <li className="flex items-center gap-2.5">
+                <li className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Synchronisation Cloud Google Sheets en temps réel</span>
+                  <span>Scanner Caméra OCR des registres</span>
                 </li>
-                <li className="flex items-center gap-2.5">
+                <li className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Relances SMS & WhatsApp groupées en 1 clic</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Multi-appareils en simultané (PC, Tablettes, Mobiles)</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Gestion collaborateurs & comptables illimités</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-amber-600 font-black shrink-0" />
-                  <span>Tableau de bord prédictif & graphiques avancés</span>
+                  <span>Synchronisation temps réel multi-postes</span>
                 </li>
               </ul>
             </div>
@@ -522,27 +475,123 @@ function SubscriptionPageContent() {
             type="button"
             onClick={() => setSelectedPlanForCheckout("pro")}
             disabled={isPro && subscription?.billing_period === billingPeriod}
-            className={`w-full py-3 px-5 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               isPro && subscription?.billing_period === billingPeriod
                 ? "bg-amber-100 text-amber-700 cursor-not-allowed border border-amber-300"
-                : "bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-lg shadow-amber-500/25 hover:scale-[1.01] active:scale-[0.99]"
+                : "bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-md shadow-amber-500/25"
             }`}
           >
-            <Crown className="w-4 h-4 fill-white" />
+            <Crown className="w-3.5 h-3.5 fill-white" />
             <span>
               {isPro
                 ? subscription?.billing_period === billingPeriod
-                  ? "Forfait PRO Actif"
+                  ? "Forfait Actif"
                   : "Renouveler PRO " + (billingPeriod === "yearly" ? "Annuel" : "Mensuel")
-                : "Activer SCOLY PRO"}
+                : "Passer à PRO"}
             </span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* 3. PREMIUM TIER */}
+        <div
+          className={`relative p-6 sm:p-7 bg-white border-2 rounded-3xl shadow-sm transition-all flex flex-col justify-between ${
+            isPremium ? "border-purple-500 ring-4 ring-purple-50" : "border-slate-200 hover:border-purple-300"
+          }`}
+        >
+          {isPremium && (
+            <div className="absolute -top-3.5 left-6 px-3 py-1 bg-purple-600 text-white text-[11px] font-bold uppercase rounded-full shadow-sm">
+              Votre formule
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase bg-purple-50 text-purple-700 rounded-lg border border-purple-200">
+                1 500 élèves max
+              </span>
+            </div>
+
+            <h3 className="text-xl font-black text-slate-900 mb-1">SCOLY PREMIUM</h3>
+            <p className="text-xs text-slate-600 leading-relaxed mb-4">
+              La solution intégrale pour les grands groupes scolaires, complexes et multi-établissements.
+            </p>
+
+            {/* Price calculation */}
+            <div className="p-3.5 bg-purple-50/60 border border-purple-200 rounded-2xl mb-5">
+              {billingPeriod === "monthly" ? (
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-black text-slate-900">25 000</span>
+                    <span className="text-xs font-semibold text-slate-600">FCFA / mois</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Facturé 25 000 FCFA chaque mois
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-black text-slate-900">210 000</span>
+                    <span className="text-xs font-semibold text-slate-600">FCFA / an</span>
+                  </div>
+                  <div className="text-xs text-emerald-700 font-bold mt-0.5">
+                    Soit 17 500 FCFA / mois (-30%)
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Features list */}
+            <div className="space-y-2.5 mb-6">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-purple-900 font-semibold">
+                Tout PRO, plus :
+              </div>
+              <ul className="space-y-2 text-xs text-slate-700">
+                <li className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-purple-600 font-black shrink-0" />
+                  <span>Jusqu&apos;à 1 500 élèves</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-purple-600 font-black shrink-0" />
+                  <span>Gestion multi-campus centralisée</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-purple-600 font-black shrink-0" />
+                  <span>Support prioritaire dédié 24/7</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-purple-600 font-black shrink-0" />
+                  <span>Formation complète de vos équipes</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setSelectedPlanForCheckout("premium")}
+            disabled={isPremium && subscription?.billing_period === billingPeriod}
+            className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              isPremium && subscription?.billing_period === billingPeriod
+                ? "bg-purple-100 text-purple-700 cursor-not-allowed border border-purple-300"
+                : "bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-600/20"
+            }`}
+          >
+            <span>
+              {isPremium
+                ? subscription?.billing_period === billingPeriod
+                  ? "Forfait Actif"
+                  : "Renouveler PREMIUM " + (billingPeriod === "yearly" ? "Annuel" : "Mensuel")
+                : "Choisir PREMIUM"}
+            </span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
       {/* ─── 5. FULL FEATURES COMPARISON MATRIX ──────────────────────── */}
-      <div className="max-w-5xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm">
+      <div className="max-w-6xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm">
         <h3 className="text-xl font-black text-slate-900 mb-2">
           Tableau comparatif détaillé
         </h3>
@@ -555,9 +604,12 @@ function SubscriptionPageContent() {
             <thead>
               <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500">
                 <th className="py-3 px-4">Fonctionnalité</th>
-                <th className="py-3 px-4 text-center w-36">START</th>
-                <th className="py-3 px-4 text-center w-36 text-amber-700 bg-amber-50/50 rounded-t-xl">
+                <th className="py-3 px-4 text-center w-28">START</th>
+                <th className="py-3 px-4 text-center w-28 text-amber-700 bg-amber-50/50 rounded-t-xl">
                   PRO
+                </th>
+                <th className="py-3 px-4 text-center w-28 text-purple-700 bg-purple-50/50 rounded-t-xl">
+                  PREMIUM
                 </th>
               </tr>
             </thead>
@@ -574,7 +626,7 @@ function SubscriptionPageContent() {
                     </td>
 
                     <td className="py-3 px-4 text-center">
-                      {!f.proOnly ? (
+                      {f.start ? (
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 inline-block" />
                       ) : (
                         <X className="w-5 h-5 text-slate-300 inline-block" />
@@ -582,7 +634,19 @@ function SubscriptionPageContent() {
                     </td>
 
                     <td className="py-3 px-4 text-center bg-amber-50/30">
-                      <CheckCircle2 className="w-5 h-5 text-amber-600 inline-block" />
+                      {f.pro ? (
+                        <CheckCircle2 className="w-5 h-5 text-amber-600 inline-block" />
+                      ) : (
+                        <X className="w-5 h-5 text-slate-300 inline-block" />
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 text-center bg-purple-50/30">
+                      {f.premium ? (
+                        <CheckCircle2 className="w-5 h-5 text-purple-600 inline-block" />
+                      ) : (
+                        <X className="w-5 h-5 text-slate-300 inline-block" />
+                      )}
                     </td>
                   </tr>
                 );
@@ -608,14 +672,14 @@ function SubscriptionPageContent() {
                 </div>
                 <div>
                   <h4 className="text-lg font-bold">Règlement de votre abonnement</h4>
-                  <p className="text-xs text-slate-400">Paiement 100% sécurisé via FedaPay Mobile Money</p>
+                  <p className="text-xs text-slate-400">Paiement sécurisé via Mobile Money</p>
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={() => setSelectedPlanForCheckout(null)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
                 aria-label="Fermer"
               >
                 <X className="w-5 h-5" />
@@ -631,7 +695,7 @@ function SubscriptionPageContent() {
                   </div>
                   <h5 className="text-lg font-bold text-slate-900">Abonnement activé avec succès !</h5>
                   <p className="text-xs text-slate-600">
-                    Félicitations, votre établissement bénéficie désormais de la formule SCOLY {selectedPlanForCheckout.toUpperCase()}.
+                    Votre établissement bénéficie désormais de la formule SCOLY {selectedPlanForCheckout.toUpperCase()}.
                   </p>
                 </div>
               ) : (
@@ -659,7 +723,7 @@ function SubscriptionPageContent() {
                   {/* Phone input */}
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      Numéro Mobile Money pour le débit (T-Money, Flooz, MoMo, Orange, Moov) :
+                      Numéro Mobile Money (T-Money, Flooz, MoMo, Orange, Moov) :
                     </label>
                     <input
                       type="tel"
@@ -668,15 +732,6 @@ function SubscriptionPageContent() {
                       placeholder="+228 90 00 00 00"
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
-                  </div>
-
-                  {/* Security Guarantee Notice */}
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 text-xs text-emerald-900">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold">Garantie 30 jours : </span>
-                      Si vous n&apos;êtes pas pleinement satisfait durant les 30 premiers jours, nous vous remboursons intégralement sans condition.
-                    </div>
                   </div>
 
                   {checkoutError && (
@@ -690,7 +745,7 @@ function SubscriptionPageContent() {
                     <button
                       type="button"
                       onClick={() => setSelectedPlanForCheckout(null)}
-                      className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl"
+                      className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl cursor-pointer"
                     >
                       Annuler
                     </button>
@@ -698,7 +753,7 @@ function SubscriptionPageContent() {
                       type="button"
                       disabled={isProcessing}
                       onClick={() => handleProceedPayment(selectedPlanForCheckout)}
-                      className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                     >
                       {isProcessing ? (
                         <>
@@ -736,4 +791,3 @@ export default function SubscriptionPage() {
     </React.Suspense>
   );
 }
-

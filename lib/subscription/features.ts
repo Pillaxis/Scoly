@@ -2,24 +2,37 @@ import {
   ScolySubscription,
   SubscriptionPlan,
   SubscriptionBillingPeriod,
-  SubscriptionStatus,
   FeatureKey,
   FeatureAccessResult,
   PricingTier,
+  PLAN_STUDENT_LIMITS,
 } from "@/types/subscription";
 
 /**
  * SCOLY Official Pricing Grid
- * - START : 5 000 FCFA/mois | 42 000 FCFA/an (-30% soit 18 000 FCFA d'économie)
- * - PRO : 10 000 FCFA/mois | 84 000 FCFA/an (-30% soit 36 000 FCFA d'économie)
+ * - START : 5 000 FCFA/mois | 42 000 FCFA/an (-30%) | 100 élèves max
+ * - PRO : 10 000 FCFA/mois | 84 000 FCFA/an (-30%) | 500 élèves max
+ * - PREMIUM : 25 000 FCFA/mois | 210 000 FCFA/an (-30%) | 1 500 élèves max
+ * - Essai gratuit : 30 jours
  */
-export const PLAN_PRICING = {
+export const PLAN_PRICING: Record<
+  SubscriptionPlan,
+  {
+    monthly: number;
+    yearly: number;
+    yearlyOriginal: number;
+    yearlySavings: number;
+    currency: string;
+    maxStudents: number;
+  }
+> = {
   start: {
     monthly: 5000,
     yearly: 42000,
     yearlyOriginal: 60000,
     yearlySavings: 18000,
     currency: "FCFA",
+    maxStudents: 100,
   },
   pro: {
     monthly: 10000,
@@ -27,8 +40,17 @@ export const PLAN_PRICING = {
     yearlyOriginal: 120000,
     yearlySavings: 36000,
     currency: "FCFA",
+    maxStudents: 500,
   },
-} as const;
+  premium: {
+    monthly: 25000,
+    yearly: 210000,
+    yearlyOriginal: 300000,
+    yearlySavings: 90000,
+    currency: "FCFA",
+    maxStudents: 1500,
+  },
+};
 
 /**
  * Detailed Feature Definitions (Based exclusively on REAL SCOLY features)
@@ -42,7 +64,7 @@ export const FEATURE_DEFINITIONS: Record<
     category: "essentials" | "analytics" | "automation" | "security";
   }
 > = {
-  // START & PRO Features
+  // START, PRO & PREMIUM Features
   students_management: {
     title: "Gestion des Élèves & Classes",
     description: "Inscriptions, fiches élèves complètes, gestion des classes et remises personnalisées.",
@@ -59,8 +81,8 @@ export const FEATURE_DEFINITIONS: Record<
     category: "essentials",
   },
   cash_receipts: {
-    title: "Encaissements Espèces & Virements",
-    description: "Enregistrement direct en caisse, gestion des avances et génération de reçus.",
+    title: "Encaissements & Règlements",
+    description: "Enregistrement direct en caisse et contrôle strict du solde dû.",
     category: "essentials",
   },
   receipt_generation: {
@@ -79,8 +101,8 @@ export const FEATURE_DEFINITIONS: Record<
     category: "essentials",
   },
   excel_import: {
-    title: "Import Fichiers Excel / CSV",
-    description: "Importation standard de listes d'élèves depuis des fichiers tableurs.",
+    title: "Import Fichiers Excel / CSV / PDF",
+    description: "Importation de listes d'élèves depuis des fichiers tableurs et documents.",
     category: "essentials",
   },
   basic_notifications: {
@@ -89,66 +111,80 @@ export const FEATURE_DEFINITIONS: Record<
     category: "essentials",
   },
 
-  // EXCLUSIVE PRO Features
+  // PRO & PREMIUM Features
   advanced_analytics: {
     title: "Graphiques & Statistiques Avancées",
-    description: "Graphiques d'évolution du chiffre d'affaires, comparaison mensuelle et prévision de trésorerie.",
-    proPitch: "Visualisez la santé financière de votre école avec des graphiques d'évolution interactifs et anticipez vos rentrées.",
+    description: "Graphiques d'évolution du chiffre d'affaires, comparaison mensuelle et prévision.",
+    proPitch: "Visualisez la santé financière de votre école avec des graphiques d'évolution interactifs.",
     category: "analytics",
   },
   student_status_donut: {
     title: "Analyse Visuelle du Statut des Élèves",
-    description: "Répartition dynamique en camembert (À jour, En retard, Critiques, Avances).",
-    proPitch: "Analysez instantanément la proportion d'élèves en règle et ciblez précisément vos actions de recouvrement.",
+    description: "Répartition dynamique en camembert (À jour, En retard, Critiques).",
+    proPitch: "Analysez instantanément la proportion d'élèves en règle et ciblez précisément vos actions.",
     category: "analytics",
   },
   smart_action_center: {
     title: "Centre d'Actions Urgentes Intelligent",
     description: "Priorisation algorithmique des dossiers à relancer en priorité selon l'ancienneté et le montant.",
-    proPitch: "Gagnez un temps précieux grâce à l'algorithme SCOLY qui sélectionne chaque matin les relances les plus rentables.",
+    proPitch: "Gagnez un temps précieux grâce à la sélection automatique des relances prioritaires chaque matin.",
     category: "automation",
   },
   mobile_money_fedapay: {
     title: "Paiement Mobile Money Automatisé (FedaPay)",
     description: "Encaissement direct en ligne via TMoney, Flooz, Orange Money, Moov et Cartes Bancaires.",
-    proPitch: "Permettez aux parents de payer les frais de scolarité à distance 24/7 par Mobile Money avec confirmation instantanée.",
+    proPitch: "Permettez aux parents de payer les frais de scolarité à distance 24/7 par Mobile Money.",
     category: "automation",
   },
   ai_ocr_scanner: {
     title: "Numérisation & Scan OCR des Registres Papier",
-    description: "Prise de photo par caméra et reconnaissance optique intelligente de vos cahiers scolaires.",
-    proPitch: "Numérisez vos registres papier en quelques secondes sans aucune saisie manuelle grâce à l'OCR intégré.",
+    description: "Prise de photo par caméra et reconnaissance optique avec vérification assistée.",
+    proPitch: "Numérisez vos registres papier avec l'écran de revue assistée SCOLY.",
     category: "automation",
   },
   google_sheets_sync: {
     title: "Synchronisation Google Sheets en Direct",
-    description: "Connexion et synchronisation bidirectionnelle avec vos feuilles de calcul Google en ligne.",
-    proPitch: "Connectez votre comptabilité à Google Sheets pour des mises à jour automatiques en temps réel.",
+    description: "Connexion et importation via le proxy serveur dédié anti-CORS.",
+    proPitch: "Connectez votre comptabilité à vos feuilles Google Sheets partagées.",
     category: "automation",
   },
   batch_reminders: {
     title: "Relances Groupées d'Impayés",
     description: "Envoi massif de relances et export des listes complètes de relance pour la direction.",
-    proPitch: "Relancez 50 parents en un seul clic et suivez le taux de conversion de vos campagnes de recouvrement.",
+    proPitch: "Relancez les parents d'une classe en un seul clic.",
     category: "automation",
   },
   unlimited_staff: {
     title: "Équipe & Permissions Rôles Fines",
     description: "Comptes d'accès séparés pour le Directeur, le Comptable et le Secrétariat avec restrictions.",
-    proPitch: "Sécurisez vos données confidentielles en attribuant à chaque collaborateur les droits stricts nécessaires.",
+    proPitch: "Sécurisez vos données confidentielles en attribuant à chaque collaborateur les droits stricts.",
     category: "security",
   },
   realtime_multidevice: {
     title: "Synchronisation Multi-Appareils Temps Réel",
     description: "Mise à jour instantanée en direct entre ordinateurs, tablettes et smartphones sans recharger.",
-    proPitch: "Travaillez simultanément en caisse et à la direction avec une synchronisation parfaite à la seconde.",
+    proPitch: "Travaillez simultanément en caisse et à la direction avec synchronisation immédiate.",
     category: "security",
   },
   advanced_notifications: {
     title: "Notifications Push Navigateur & Synthèse Quotidienne",
     description: "Alertes push natives sur mobile/PC et récapitulatif quotidien automatique de la caisse.",
-    proPitch: "Restez informé des encaissements en temps réel même lorsque l'application n'est pas au premier plan.",
+    proPitch: "Restez informé des encaissements en temps réel à chaque encaissement.",
     category: "automation",
+  },
+
+  // PREMIUM Exclusive Features
+  multi_campus_management: {
+    title: "Gestion Multi-Établissements & Campus",
+    description: "Gestion centralisée de plusieurs sites scolaires sous un même compte groupe.",
+    proPitch: "Supervisez plusieurs campus ou complexes scolaires depuis une vue consolidée.",
+    category: "security",
+  },
+  priority_dedicated_support: {
+    title: "Support Dédié Prioritaire 24/7",
+    description: "Assistance téléphonique et WhatsApp directe avec un gestionnaire de compte dédié.",
+    proPitch: "Bénéficiez d'un accompagnement personnalisé pour la formation de vos équipes.",
+    category: "essentials",
   },
 };
 
@@ -177,6 +213,8 @@ export const PLAN_FEATURES: Record<SubscriptionPlan, Record<FeatureKey, boolean>
     unlimited_staff: false,
     realtime_multidevice: false,
     advanced_notifications: false,
+    multi_campus_management: false,
+    priority_dedicated_support: false,
   },
   pro: {
     students_management: true,
@@ -199,6 +237,31 @@ export const PLAN_FEATURES: Record<SubscriptionPlan, Record<FeatureKey, boolean>
     unlimited_staff: true,
     realtime_multidevice: true,
     advanced_notifications: true,
+    multi_campus_management: false,
+    priority_dedicated_support: false,
+  },
+  premium: {
+    students_management: true,
+    parents_contacts: true,
+    tuition_management: true,
+    cash_receipts: true,
+    receipt_generation: true,
+    basic_reminders: true,
+    basic_dashboard: true,
+    excel_import: true,
+    basic_notifications: true,
+    advanced_analytics: true,
+    student_status_donut: true,
+    smart_action_center: true,
+    mobile_money_fedapay: true,
+    ai_ocr_scanner: true,
+    google_sheets_sync: true,
+    batch_reminders: true,
+    unlimited_staff: true,
+    realtime_multidevice: true,
+    advanced_notifications: true,
+    multi_campus_management: true,
+    priority_dedicated_support: true,
   },
 };
 
@@ -209,67 +272,74 @@ export const PRICING_TIERS: PricingTier[] = [
   {
     id: "start",
     name: "START",
-    tagline: "L'essentiel pour informatiser et sécuriser les encaissements scolaires.",
+    tagline: "Idéal pour informatiser simplement une école jusqu'à 100 élèves.",
+    maxStudents: 100,
     monthlyPrice: 5000,
     yearlyPrice: 42000,
     yearlySavings: 18000,
     currency: "FCFA",
     features: [
-      { name: "Gestion complète des élèves & classes", included: true },
+      { name: "Jusqu'à 100 élèves enregistrés", included: true },
+      { name: "Gestion complète des classes & scolarités", included: true },
       { name: "Répertoire & contacts parents WhatsApp", included: true },
-      { name: "Grilles de scolarité & échéances", included: true },
-      { name: "Paiements espèces, chèques, virements", included: true },
-      { name: "Génération & impression de reçus officiels", included: true },
+      { name: "Encaissements & reçus officiels REC-25", included: true },
       { name: "Relances individuelles WhatsApp / SMS", included: true },
       { name: "Tableau de bord financier de base", included: true },
-      { name: "Import standard fichiers Excel & CSV", included: true },
+      { name: "Import fichiers Excel, CSV & PDF", included: true },
       { name: "Graphiques & statistiques avancées", included: false, isProHighlight: true },
-      { name: "Centre d'actions urgentes intelligent", included: false, isProHighlight: true },
-      { name: "Paiement en ligne Mobile Money (FedaPay)", included: false, isProHighlight: true },
       { name: "Numérisation caméra OCR des registres", included: false, isProHighlight: true },
-      { name: "Multi-utilisateurs & permissions fines", included: false, isProHighlight: true },
+      { name: "Paiement Mobile Money automatisé", included: false, isProHighlight: true },
     ],
     ctaText: "Choisir START",
   },
   {
     id: "pro",
     name: "PRO",
-    tagline: "La puissance maximale : analyse avancée, OCR, Mobile Money et synchronisation en direct.",
+    tagline: "Pour les établissements en croissance jusqu'à 500 élèves avec toute la puissance d'analyse.",
     badge: "Recommandé",
     popular: true,
+    maxStudents: 500,
     monthlyPrice: 10000,
     yearlyPrice: 84000,
     yearlySavings: 36000,
     currency: "FCFA",
     features: [
+      { name: "Jusqu'à 500 élèves enregistrés", included: true },
       { name: "Toutes les fonctionnalités du forfait START", included: true },
-      { name: "Graphiques d'évolution du CA & ventilation avancée", included: true },
-      { name: "Camembert dynamique de santé financière", included: true },
-      { name: "Centre d'actions urgentes & priorisation IA", included: true },
-      { name: "Encaissement en ligne Mobile Money (TMoney, Flooz...)", included: true },
-      { name: "Numérisation par caméra OCR des registres", included: true },
+      { name: "Graphiques d'évolution du CA & camembert financier", included: true },
+      { name: "Centre d'actions urgentes avec priorisation", included: true },
+      { name: "Encaissement Mobile Money en ligne (FedaPay)", included: true },
+      { name: "Numérisation par caméra OCR des cahiers", included: true },
       { name: "Synchronisation Google Sheets en direct", included: true },
-      { name: "Relances groupées & exports comptables", included: true },
-      { name: "Gestion d'équipe multi-utilisateurs avancée", included: true },
-      { name: "Synchronisation temps réel multi-appareils (PC/Mobile)", included: true },
-      { name: "Notifications push natives & récapitutifs de caisse", included: true },
+      { name: "Relances groupées par classe", included: true },
+      { name: "Multi-utilisateurs & permissions fines", included: true },
+      { name: "Synchronisation temps réel multi-appareils", included: true },
     ],
     ctaText: "Passer à PRO",
+  },
+  {
+    id: "premium",
+    name: "PREMIUM",
+    tagline: "La solution intégrale pour les grands groupes scolaires jusqu'à 1 500 élèves.",
+    maxStudents: 1500,
+    monthlyPrice: 25000,
+    yearlyPrice: 210000,
+    yearlySavings: 90000,
+    currency: "FCFA",
+    features: [
+      { name: "Jusqu'à 1 500 élèves enregistrés", included: true },
+      { name: "Toutes les fonctionnalités du forfait PRO", included: true },
+      { name: "Gestion multi-campus & complexes scolaires", included: true },
+      { name: "Support prioritaire dédié 24/7 sur WhatsApp", included: true },
+      { name: "Formation personnalisée de l'équipe administrative", included: true },
+      { name: "Accompagnement à l'import initial de données", included: true },
+    ],
+    ctaText: "Choisir PREMIUM",
   },
 ];
 
 /**
  * Centralized Permission Engine: canAccessFeature
- * 
- * Evaluates whether the school subscription allows access to a specific feature.
- * 
- * Rules:
- * 1. During 15-day Trial: All features (including PRO) are unlocked to let the school discover SCOLY.
- * 2. If Trial Expired: Returns false with reason TRIAL_EXPIRED.
- * 3. If Active PRO: All features are unlocked.
- * 4. If Active START: START features are unlocked; PRO features return PRO_REQUIRED.
- * 5. If Subscription Expired: Returns false with SUBSCRIPTION_EXPIRED.
- * 6. If Subscription Cancelled / Inactive: Returns false with SUBSCRIPTION_REQUIRED.
  */
 export function canAccessFeature(
   subscription: ScolySubscription | null | undefined,
@@ -281,7 +351,7 @@ export function canAccessFeature(
     proPitch: "",
   };
 
-  // If no subscription object at all, default to a safe 15-day trial mock
+  // If no subscription object at all, default to an active trial
   if (!subscription) {
     return {
       allowed: true,
@@ -293,7 +363,7 @@ export function canAccessFeature(
 
   const now = new Date();
 
-  // 1. TRIALING STATE
+  // 1. TRIALING STATE (30 days)
   if (subscription.status === "trialing") {
     if (!subscription.trial_end_at) {
       return {
@@ -301,7 +371,7 @@ export function canAccessFeature(
         reason: "TRIAL_EXPIRED",
         requiredPlan: "start",
         featureTitle: def.title,
-        featureDescription: "Votre période d'essai de 15 jours est terminée. Choisissez un forfait pour continuer.",
+        featureDescription: "Votre période d'essai de 30 jours est terminée. Choisissez un forfait pour continuer.",
       };
     }
     const trialEnd = new Date(subscription.trial_end_at);
@@ -311,7 +381,7 @@ export function canAccessFeature(
         reason: "TRIAL_EXPIRED",
         requiredPlan: "start",
         featureTitle: def.title,
-        featureDescription: "Votre période d'essai de 15 jours est terminée. Choisissez un forfait pour continuer.",
+        featureDescription: "Votre période d'essai de 30 jours est terminée. Choisissez un forfait pour continuer.",
       };
     }
 
@@ -326,7 +396,6 @@ export function canAccessFeature(
 
   // 2. ACTIVE PAID SUBSCRIPTION
   if (subscription.status === "active") {
-    // Check expiration date if present
     if (subscription.subscription_end_at) {
       const subEnd = new Date(subscription.subscription_end_at);
       if (now > subEnd) {
@@ -340,28 +409,18 @@ export function canAccessFeature(
       }
     }
 
-    // PRO plan has access to EVERYTHING
-    if (subscription.plan === "pro") {
-      return {
-        allowed: true,
-        requiredPlan: "pro",
-        featureTitle: def.title,
-        featureDescription: def.proPitch || def.description,
-      };
-    }
+    const currentPlan = subscription.plan || "start";
+    const isIncluded = PLAN_FEATURES[currentPlan]?.[feature] ?? false;
 
-    // START plan: check if feature is included in START
-    const isIncludedInStart = PLAN_FEATURES.start[feature] ?? false;
-    if (isIncludedInStart) {
+    if (isIncluded) {
       return {
         allowed: true,
-        requiredPlan: "start",
+        requiredPlan: currentPlan,
         featureTitle: def.title,
         featureDescription: def.description,
       };
     }
 
-    // Feature requires PRO
     return {
       allowed: false,
       reason: "PRO_REQUIRED",
@@ -373,7 +432,6 @@ export function canAccessFeature(
 
   // 3. PAST DUE (Grace period)
   if (subscription.status === "past_due") {
-    // Allow basic START operations while warning for renewal
     const isIncludedInStart = PLAN_FEATURES.start[feature] ?? false;
     if (isIncludedInStart) {
       return {
@@ -423,7 +481,6 @@ export function getTrialTimeRemaining(subscription: ScolySubscription | null | u
     };
   }
 
-
   const now = Date.now();
   const trialEnd = new Date(subscription.trial_end_at).getTime();
   const diffMs = trialEnd - now;
@@ -460,73 +517,6 @@ export function getTrialTimeRemaining(subscription: ScolySubscription | null | u
 }
 
 /**
- * Checks if the subscription is currently eligible for the 30-day money-back guarantee.
- * 
- * STRICT INVARIANT:
- * - Free trial of 15 days is NEVER eligible.
- * - Applies ONLY after a paid subscription activation.
- * - Lasts for exactly 30 days after subscription_start_at.
- */
-export function isEligibleForRefund(subscription: ScolySubscription | null | undefined): {
-  isEligible: boolean;
-  eligible: boolean;
-  daysRemaining: number;
-  eligibleUntil: string | null;
-  formattedEndDate: string | null;
-  message: string;
-} {
-  if (
-    !subscription ||
-    subscription.status !== "active" ||
-    !subscription.refund_eligible_until ||
-    !subscription.price_amount ||
-    subscription.price_amount <= 0
-  ) {
-    return {
-      isEligible: false,
-      eligible: false,
-      daysRemaining: 0,
-      eligibleUntil: null,
-      formattedEndDate: null,
-      message: "",
-    };
-  }
-
-  const now = Date.now();
-  const refundUntil = new Date(subscription.refund_eligible_until).getTime();
-  const diffMs = refundUntil - now;
-
-  const formattedEndDate = new Date(subscription.refund_eligible_until).toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-
-  if (diffMs <= 0) {
-    return {
-      isEligible: false,
-      eligible: false,
-      daysRemaining: 0,
-      eligibleUntil: subscription.refund_eligible_until,
-      formattedEndDate,
-      message: "Période de garantie de 30 jours terminée.",
-    };
-  }
-
-  const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-  return {
-    isEligible: true,
-    eligible: true,
-    daysRemaining: days,
-    eligibleUntil: subscription.refund_eligible_until,
-    formattedEndDate,
-    message: `Garantie satisfait ou remboursé pendant 30 jours (encore ${days} jour(s) restant(s)).`,
-  };
-}
-
-
-/**
  * Helper to calculate subscription dates for a new period
  */
 export function calculateSubscriptionDates(
@@ -536,7 +526,6 @@ export function calculateSubscriptionDates(
 ): {
   subscriptionStartAt: string;
   subscriptionEndAt: string;
-  refundEligibleUntil: string;
   amount: number;
 } {
   const start = new Date(fromDate);
@@ -548,27 +537,22 @@ export function calculateSubscriptionDates(
     end.setMonth(end.getMonth() + 1);
   }
 
-  // 30 days money-back guarantee starts exactly on payment date
-  const refundUntil = new Date(start);
-  refundUntil.setDate(refundUntil.getDate() + 30);
-
   const amount = PLAN_PRICING[plan][billingPeriod];
 
   return {
     subscriptionStartAt: start.toISOString(),
     subscriptionEndAt: end.toISOString(),
-    refundEligibleUntil: refundUntil.toISOString(),
     amount,
   };
 }
 
 /**
- * Creates default 15-day trial subscription object for a school
+ * Creates default 30-day trial subscription object for a school
  */
 export function getDefaultTrialSubscription(schoolId: string, createdAt?: string): ScolySubscription {
   const startDate = createdAt ? new Date(createdAt) : new Date();
   const trialEnd = new Date(startDate);
-  trialEnd.setDate(trialEnd.getDate() + 15);
+  trialEnd.setDate(trialEnd.getDate() + 30);
 
   return {
     id: `sub-${schoolId.slice(0, 8)}`,
@@ -582,11 +566,46 @@ export function getDefaultTrialSubscription(schoolId: string, createdAt?: string
     trial_end_at: trialEnd.toISOString(),
     subscription_start_at: null,
     subscription_end_at: null,
-    refund_eligible_until: null,
     cancelled_at: null,
     last_payment_reference: null,
     last_payment_method: null,
     payment_provider: "fedapay",
     created_at: startDate.toISOString(),
+  };
+}
+
+/**
+ * Check if the student limit has been reached for the current subscription plan
+ */
+export function checkStudentLimitReached(
+  currentStudentCount: number,
+  subscription: ScolySubscription | null | undefined
+): { isReached: boolean; maxAllowed: number; currentCount: number; requiredPlan?: SubscriptionPlan } {
+  if (!subscription || subscription.status === "trialing") {
+    // In 30-day trial, allow testing up to 500 students
+    const maxAllowed = 500;
+    return {
+      isReached: currentStudentCount >= maxAllowed,
+      maxAllowed,
+      currentCount: currentStudentCount,
+      requiredPlan: "pro",
+    };
+  }
+
+  const plan = subscription.plan || "start";
+  const maxAllowed = PLAN_STUDENT_LIMITS[plan] || 100;
+  const isReached = currentStudentCount >= maxAllowed;
+
+  let requiredPlan: SubscriptionPlan | undefined;
+  if (isReached) {
+    if (plan === "start") requiredPlan = "pro";
+    else if (plan === "pro") requiredPlan = "premium";
+  }
+
+  return {
+    isReached,
+    maxAllowed,
+    currentCount: currentStudentCount,
+    requiredPlan,
   };
 }

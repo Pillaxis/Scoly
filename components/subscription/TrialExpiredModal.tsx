@@ -4,7 +4,6 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Lock, ShieldCheck, Check, Sparkles, Crown, ArrowRight } from "lucide-react";
 import { useScoly } from "@/lib/store";
-import { PLAN_PRICING } from "@/lib/subscription/features";
 
 interface TrialExpiredModalProps {
   isOpen?: boolean;
@@ -26,7 +25,7 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
       <div
-        className="relative w-full max-w-2xl overflow-hidden bg-white border border-slate-200 rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-3xl overflow-hidden bg-white border border-slate-200 rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
       >
@@ -40,7 +39,7 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
             </div>
 
             <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white mb-2">
-              Votre période d&apos;essai est terminée
+              Votre période d&apos;essai de 30 jours est terminée
             </h2>
 
             <p className="text-slate-300 text-sm leading-relaxed">
@@ -49,7 +48,7 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
 
             <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs rounded-full">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Garantie Satisfait ou Remboursé 30 jours sur tous les forfaits</span>
+              <span>Vos données scolaires et reçus d&apos;encaissement restent intacts</span>
             </div>
           </div>
         </div>
@@ -60,24 +59,24 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
             Choisissez votre formule pour continuer à utiliser SCOLY
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* START CARD */}
             <div className="relative p-5 bg-white border-2 border-slate-200 hover:border-blue-500 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold uppercase px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md border border-blue-200">
-                    Forfait Essentiel
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md border border-blue-200">
+                    Jusqu&apos;à 100 élèves
                   </span>
                 </div>
 
-                <div className="text-lg font-black text-slate-900">SCOLY START</div>
+                <div className="text-base font-black text-slate-900">SCOLY START</div>
                 <p className="text-xs text-slate-500 mt-1 mb-4">
-                  Idéal pour gérer simplement les paiements et scolarités en caisse.
+                  Idéal pour informatiser simplement une école jusqu&apos;à 100 élèves.
                 </p>
 
                 <div className="mb-4">
-                  <span className="text-2xl font-black text-slate-900">
-                    5 000 <span className="text-xs font-normal text-slate-600">FCFA / mois</span>
+                  <span className="text-xl font-black text-slate-900">
+                    5 000 <span className="text-xs font-normal text-slate-600">F/mois</span>
                   </span>
                   <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
                     ou 42 000 FCFA / an (-30%)
@@ -87,15 +86,15 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
                 <ul className="space-y-2 text-xs text-slate-600 mb-6">
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>Gestion élèves & scolarités</span>
+                    <span>Jusqu&apos;à 100 élèves</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>Encaissement caisse & reçus PDF</span>
+                    <span>Encaissement caisse & reçus</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>Rappels SMS individuels</span>
+                    <span>Relances WhatsApp</span>
                   </li>
                 </ul>
               </div>
@@ -103,7 +102,7 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
               <button
                 type="button"
                 onClick={() => router.push("/subscription?plan=start")}
-                className="w-full py-2.5 px-4 text-xs font-bold text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 px-4 text-xs font-bold text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span>Choisir START</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -119,38 +118,38 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold uppercase px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md border border-amber-300 flex items-center gap-1">
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md border border-amber-300 flex items-center gap-1">
                     <Crown className="w-3 h-3 text-amber-600 fill-amber-500" />
-                    Forfait Complet
+                    Jusqu&apos;à 500 élèves
                   </span>
                 </div>
 
-                <div className="text-lg font-black text-slate-900">SCOLY PRO</div>
+                <div className="text-base font-black text-slate-900">SCOLY PRO</div>
                 <p className="text-xs text-slate-500 mt-1 mb-4">
-                  Toute la puissance : Mobile Money, Scanner IA, Analytics & Multi-appareils.
+                  Mobile Money, Scanner OCR, Analytics & Multi-postes.
                 </p>
 
                 <div className="mb-4">
-                  <span className="text-2xl font-black text-slate-900">
-                    10 000 <span className="text-xs font-normal text-slate-600">FCFA / mois</span>
+                  <span className="text-xl font-black text-slate-900">
+                    10 000 <span className="text-xs font-normal text-slate-600">F/mois</span>
                   </span>
                   <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
-                    ou 84 000 FCFA / an (Économisez 36 000 FCFA)
+                    ou 84 000 FCFA / an (-30%)
                   </div>
                 </div>
 
                 <ul className="space-y-2 text-xs text-slate-700 mb-6">
                   <li className="flex items-center gap-2 font-medium">
                     <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Paiements en ligne FedaPay</span>
+                    <span>Jusqu&apos;à 500 élèves</span>
                   </li>
                   <li className="flex items-center gap-2 font-medium">
                     <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Scanner IA OCR de listes</span>
+                    <span>Mobile Money & Scanner OCR</span>
                   </li>
                   <li className="flex items-center gap-2 font-medium">
                     <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Multi-appareils & Équipe illimitée</span>
+                    <span>Synchronisation temps réel</span>
                   </li>
                 </ul>
               </div>
@@ -158,10 +157,59 @@ export function TrialExpiredModal({ isOpen }: TrialExpiredModalProps) {
               <button
                 type="button"
                 onClick={() => router.push("/subscription?plan=pro")}
-                className="w-full py-2.5 px-4 text-xs font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full py-2.5 px-4 text-xs font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Crown className="w-3.5 h-3.5 fill-white" />
-                <span>Activer SCOLY PRO</span>
+                <span>Passer à PRO</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* PREMIUM CARD */}
+            <div className="relative p-5 bg-white border-2 border-slate-200 hover:border-purple-500 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md border border-purple-200">
+                    Jusqu&apos;à 1 500 élèves
+                  </span>
+                </div>
+
+                <div className="text-base font-black text-slate-900">SCOLY PREMIUM</div>
+                <p className="text-xs text-slate-500 mt-1 mb-4">
+                  Pour les grands groupes scolaires et multi-campus.
+                </p>
+
+                <div className="mb-4">
+                  <span className="text-xl font-black text-slate-900">
+                    25 000 <span className="text-xs font-normal text-slate-600">F/mois</span>
+                  </span>
+                  <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                    ou 210 000 FCFA / an (-30%)
+                  </div>
+                </div>
+
+                <ul className="space-y-2 text-xs text-slate-600 mb-6">
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>Jusqu&apos;à 1 500 élèves</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>Gestion Multi-Campus</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>Support dédié 24/7</span>
+                  </li>
+                </ul>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => router.push("/subscription?plan=premium")}
+                className="w-full py-2.5 px-4 text-xs font-bold text-slate-900 bg-slate-100 hover:bg-purple-100 hover:text-purple-900 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Choisir PREMIUM</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

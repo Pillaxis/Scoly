@@ -287,7 +287,7 @@ interface ScolyContextType {
   deleteNotification: (notificationId: string) => Promise<void>;
   triggerProactiveAnalysis: () => void;
 
-  // Abonnements & Forfaits (START, PRO, Essai 15j, Garantie 30j)
+  // Abonnements & Forfaits (START, PRO, PREMIUM, Essai 30j)
   subscription: ScolySubscription;
   hasFeature: (feature: FeatureKey) => boolean;
   canAccess: (feature: FeatureKey) => FeatureAccessResult;
@@ -1347,9 +1347,21 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       const summary = getStudentFinancialSummary(params.student_id);
       const previousBalance = summary.balance_due;
 
-      const allocated_amount = Math.min(numericAmount, previousBalance);
-      const credit_amount = Math.max(0, numericAmount - previousBalance);
-      const is_advance = credit_amount > 0;
+      if (previousBalance <= 0) {
+        throw new Error(
+          "La scolarité de cet élève est déjà intégralement soldée (0 FCFA restant dû). Aucun nouveau paiement ne peut être encaissé."
+        );
+      }
+
+      if (numericAmount > previousBalance) {
+        throw new Error(
+          `Montant trop élevé : Le solde restant dû est de ${previousBalance.toLocaleString("fr-FR")} FCFA. Vous ne pouvez pas enregistrer plus que le montant restant.`
+        );
+      }
+
+      const allocated_amount = numericAmount;
+      const credit_amount = 0;
+      const is_advance = false;
 
       const counter = (school.receipt_counter || 0) + 1;
       const formattedCounter = String(counter).padStart(5, "0");

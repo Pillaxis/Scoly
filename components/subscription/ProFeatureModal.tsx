@@ -122,7 +122,7 @@ export function ProFeatureModal({
 
             <div className="flex items-center gap-1.5 text-[11px] text-slate-600 bg-white/80 px-2.5 py-1.5 rounded-lg border border-amber-200/50 shadow-xs">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span className="font-medium">Garantie 30j</span>
+              <span className="font-medium">30 jours d&apos;essai gratuit</span>
             </div>
           </div>
         </div>

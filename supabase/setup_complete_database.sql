@@ -1,11 +1,11 @@
 -- ==============================================================================
--- SCOLY SAAS V1 — SCHÉMA COMPLET ET DÉPLOIEMENT SUPABASE POSTGRESQL (STRICT RLS)
+-- SCOLY SAAS V2 — SCHÉMA COMPLET ET DÉPLOIEMENT SUPABASE POSTGRESQL (STRICT RLS)
 -- ==============================================================================
 -- 1. Tables multi-établissements (écoles, années, classes, élèves, paiements...)
--- 2. Procédures transactionnelles (enregistrement de paiement, grilles tarifaires)
+-- 2. Procédures transactionnelles (record_payment_v3 avec règle stricte anti-surpaiement)
 -- 3. RLS (Row Level Security) pour isolation stricte par école
--- 4. Trigger automatique à la création de compte utilisateur
--- 5. Données initiales et structure par défaut
+-- 4. Publication Realtime multi-tables (synchronisation multi-postes instantanée)
+-- 5. Trigger automatique à la création de compte utilisateur
 -- ==============================================================================
 
 -- ─── 0. EXTENSIONS POSTGRESQL ─────────────────────────────────────────────────
@@ -31,7 +31,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
-    CREATE TYPE subscription_plan AS ENUM ('start', 'pro');
+    CREATE TYPE subscription_plan AS ENUM ('start', 'pro', 'premium');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
@@ -43,7 +43,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ─── 2. TABLES FONDAMENTALES ──────────────────────────────────────────────────
-
 
 -- 2.1 ÉCOLES (TENANTS MULTI-ÉTABLISSEMENTS)
 CREATE TABLE IF NOT EXISTS schools (
@@ -93,7 +92,7 @@ CREATE TABLE IF NOT EXISTS school_members (
     UNIQUE(school_id, user_id)
 );
 
--- 2.4 CLASSES
+-- 2.4 CLASSES (VRAIS UUIDS)
 CREATE TABLE IF NOT EXISTS classes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
@@ -176,7 +175,7 @@ CREATE TABLE IF NOT EXISTS student_parents (
     PRIMARY KEY (student_id, parent_id)
 );
 
--- 2.10 PAIEMENTS & REÇUS SÉCURISÉS
+-- 2.10 PAIEMENTS & REÇUS SÉCURISÉS (RÈGLE ABSOLUE ANTI-SURPAIEMENT)
 CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
@@ -279,7 +278,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2.16 ABONNEMENTS SCOLY (SAAS SUBSCRIPTIONS)
+-- 2.16 ABONNEMENTS SCOLY (START 100, PRO 500, PREMIUM 1500, ESSAI 30 JOURS)
 CREATE TABLE IF NOT EXISTS public.subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
@@ -289,10 +288,9 @@ CREATE TABLE IF NOT EXISTS public.subscriptions (
     price_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
     currency VARCHAR(10) NOT NULL DEFAULT 'FCFA',
     trial_start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    trial_end_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 days'),
+    trial_end_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'),
     subscription_start_at TIMESTAMPTZ,
     subscription_end_at TIMESTAMPTZ,
-    refund_eligible_until TIMESTAMPTZ,
     cancelled_at TIMESTAMPTZ,
     last_payment_reference VARCHAR(150),
     last_payment_method VARCHAR(50),
@@ -321,10 +319,8 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON public.subscriptions(stat
 CREATE INDEX IF NOT EXISTS idx_subscriptions_end_at ON public.subscriptions(subscription_end_at);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_trial_end ON public.subscriptions(trial_end_at);
 
-
-
--- ─── 4. PROCÉDURE TRANSACTIONNELLE DE PAIEMENT SÉCURISÉ ────────────────────────
-CREATE OR REPLACE FUNCTION record_payment_v2(
+-- ─── 4. PROCÉDURE TRANSACTIONNELLE DE PAIEMENT SÉCURISÉ (V3 STRICTE) ───────────
+CREATE OR REPLACE FUNCTION record_payment_v3(
     p_school_id UUID,
     p_academic_year_id UUID,
     p_student_id UUID,
@@ -343,33 +339,30 @@ DECLARE
     v_total_due NUMERIC(12, 2) := 0;
     v_total_paid NUMERIC(12, 2) := 0;
     v_current_balance NUMERIC(12, 2) := 0;
-    v_allocated_amount NUMERIC(12, 2) := 0;
-    v_credit_amount NUMERIC(12, 2) := 0;
-    v_is_advance BOOLEAN := false;
     v_receipt_counter INT;
     v_receipt_prefix VARCHAR(10);
     v_receipt_number VARCHAR(50);
     v_new_payment_id UUID;
 BEGIN
     IF p_amount <= 0 THEN
-        RAISE EXCEPTION 'Le montant du paiement doit être strictement supérieur à 0 FCFA.';
+        RAISE EXCEPTION 'Le montant du versement doit être strictement supérieur à 0 FCFA.';
     END IF;
 
     IF p_idempotency_key IS NOT NULL AND EXISTS (
         SELECT 1 FROM payments 
         WHERE school_id = p_school_id AND idempotency_key = p_idempotency_key
     ) THEN
-        RAISE EXCEPTION 'Ce paiement a déjà été traité (idempotence).';
+        RAISE EXCEPTION 'Ce paiement a déjà été traité (protection anti-doublon idempotence).';
     END IF;
 
-    -- Récupération scolarité due
+    -- Récupération du montant total de la scolarité due par l'élève
     SELECT COALESCE(s.custom_tuition, COALESCE(tp.total_amount, 150000) - COALESCE(s.discount_amount, 0))
     INTO v_total_due
     FROM students s
     LEFT JOIN tuition_plans tp ON tp.class_id = s.class_id AND tp.academic_year_id = p_academic_year_id
     WHERE s.id = p_student_id;
 
-    -- Total déjà payé
+    -- Cumul des versements valides déjà effectués
     SELECT COALESCE(SUM(amount), 0)
     INTO v_total_paid
     FROM payments
@@ -378,11 +371,17 @@ BEGIN
       AND status = 'completed';
 
     v_current_balance := GREATEST(0, v_total_due - v_total_paid);
-    v_allocated_amount := LEAST(p_amount, v_current_balance);
-    v_credit_amount := GREATEST(0, p_amount - v_current_balance);
-    v_is_advance := (v_credit_amount > 0);
 
-    -- Incrémentation atomique du numéro de reçu
+    -- RÈGLE FINANCIÈRE ABSOLUE : Zéro surpaiement
+    IF v_current_balance <= 0 THEN
+        RAISE EXCEPTION 'OVERPAYMENT_FORBIDDEN: La scolarité de cet élève est déjà intégralement soldée (0 FCFA restant dû). Aucun nouveau paiement ne peut être encaissé.';
+    END IF;
+
+    IF p_amount > v_current_balance THEN
+        RAISE EXCEPTION 'OVERPAYMENT_FORBIDDEN: Montant trop élevé. Le solde restant dû est de % FCFA. Vous ne pouvez pas enregistrer un montant supérieur au solde restant.', v_current_balance;
+    END IF;
+
+    -- Incrémentation atomique du numéro séquentiel de reçu
     UPDATE schools 
     SET receipt_counter = COALESCE(receipt_counter, 0) + 1
     WHERE id = p_school_id
@@ -390,7 +389,7 @@ BEGIN
 
     v_receipt_number := COALESCE(v_receipt_prefix, 'REC-25-') || LPAD(v_receipt_counter::TEXT, 5, '0');
 
-    -- Insertion du paiement
+    -- Insertion du paiement validé
     INSERT INTO payments (
         school_id,
         academic_year_id,
@@ -411,9 +410,9 @@ BEGIN
         p_academic_year_id,
         p_student_id,
         p_amount,
-        v_allocated_amount,
-        v_credit_amount,
-        v_is_advance,
+        p_amount,
+        0,
+        false,
         p_payment_method,
         p_transaction_ref,
         v_receipt_number,
@@ -426,10 +425,41 @@ BEGIN
     RETURN jsonb_build_object(
         'payment_id', v_new_payment_id,
         'receipt_number', v_receipt_number,
-        'allocated_amount', v_allocated_amount,
-        'credit_amount', v_credit_amount,
-        'is_advance', v_is_advance,
-        'new_balance', GREATEST(0, v_current_balance - p_amount)
+        'allocated_amount', p_amount,
+        'credit_amount', 0,
+        'is_advance', false,
+        'new_balance', v_current_balance - p_amount
+    );
+END;
+$$;
+
+-- Alias de compatibilité pour record_payment_v2 vers la nouvelle règle
+CREATE OR REPLACE FUNCTION record_payment_v2(
+    p_school_id UUID,
+    p_academic_year_id UUID,
+    p_student_id UUID,
+    p_amount NUMERIC(12, 2),
+    p_payment_method VARCHAR(50),
+    p_transaction_ref VARCHAR(100),
+    p_notes TEXT,
+    p_recorded_by UUID,
+    p_idempotency_key VARCHAR(150)
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN record_payment_v3(
+        p_school_id,
+        p_academic_year_id,
+        p_student_id,
+        p_amount,
+        p_payment_method,
+        p_transaction_ref,
+        p_notes,
+        p_recorded_by,
+        p_idempotency_key
     );
 END;
 $$;
@@ -450,7 +480,7 @@ ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE import_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-
+ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- Helper pour identifier l'école de l'utilisateur connecté
 CREATE OR REPLACE FUNCTION current_user_school_id()
@@ -584,15 +614,30 @@ CREATE POLICY tenant_subscriptions_isolation ON public.subscriptions
         OR school_id IN (SELECT sm.school_id FROM public.school_members sm WHERE sm.user_id = auth.uid())
     );
 
--- 5.17 Publication Realtime
+-- 5.17 Publication Realtime Étendue (Temps Réel Multi-Postes)
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE payments;
+EXCEPTION WHEN duplicate_object THEN null; WHEN undefined_object THEN null; END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE students;
+EXCEPTION WHEN duplicate_object THEN null; WHEN undefined_object THEN null; END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE tuition_plans;
+EXCEPTION WHEN duplicate_object THEN null; WHEN undefined_object THEN null; END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE tuition_installments;
+EXCEPTION WHEN duplicate_object THEN null; WHEN undefined_object THEN null; END $$;
+
 DO $$ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
-    ALTER PUBLICATION supabase_realtime ADD TABLE subscriptions;
-EXCEPTION
-    WHEN duplicate_object THEN null;
-    WHEN undefined_object THEN null;
-END $$;
+EXCEPTION WHEN duplicate_object THEN null; WHEN undefined_object THEN null; END $$;
 
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE subscriptions;
+EXCEPTION WHEN duplicate_object THEN null; WHEN undefined_object THEN null; END $$;
 
 -- ─── 6. TRIGGER AUTOMATIQUE POUR TOUT NOUVEAU COMPTE UTILISATEUR ──────────────
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -645,7 +690,20 @@ BEGIN
         true
     );
 
-    -- 4. Création des moyens de paiement par défaut
+    -- 4. Création de l'abonnement initial (Essai 30 jours)
+    INSERT INTO public.subscriptions (school_id, plan, billing_period, status, price_amount, currency, trial_start_at, trial_end_at)
+    VALUES (
+        v_school_id,
+        'start',
+        'monthly',
+        'trialing',
+        0,
+        'FCFA',
+        NOW(),
+        NOW() + INTERVAL '30 days'
+    );
+
+    -- 5. Création des moyens de paiement par défaut
     INSERT INTO public.payment_methods_config (school_id, key, label, is_active, order_index) VALUES
         (v_school_id, 'cash', 'Espèces', true, 0),
         (v_school_id, 'tmoney', 'TMoney', true, 1),

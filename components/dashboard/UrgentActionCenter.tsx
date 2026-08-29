@@ -21,7 +21,7 @@ export function UrgentActionCenter() {
     return classes.filter((c) => !tuitionPlans.some((tp) => tp.class_id === c.id && tp.total_amount > 0)).length;
   }, [classes, tuitionPlans]);
 
-  const hasVerificationAction = unconfiguredClassesCount > 0 || dashboardMetrics.students_credit > 0;
+  const hasVerificationAction = unconfiguredClassesCount > 0 || dashboardMetrics.students_late > 0;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-2xs">
@@ -121,16 +121,16 @@ export function UrgentActionCenter() {
               <span className="font-mono font-black text-blue-700 text-lg">
                 {unconfiguredClassesCount > 0
                   ? unconfiguredClassesCount
-                  : dashboardMetrics.students_credit > 0
-                  ? dashboardMetrics.students_credit
+                  : dashboardMetrics.students_late > 0
+                  ? dashboardMetrics.students_late
                   : 0}
               </span>
             </div>
             <h3 className="font-bold text-slate-900 text-xs mt-2.5">
               {unconfiguredClassesCount > 0
                 ? `${unconfiguredClassesCount} classe(s) sans grille définie`
-                : dashboardMetrics.students_credit > 0
-                ? `${dashboardMetrics.students_credit} élève(s) avec avance/crédit`
+                : dashboardMetrics.students_late > 0
+                ? `${dashboardMetrics.students_late} élève(s) en retard modéré (1-15j)`
                 : classes.length > 0
                 ? "Toutes les grilles configurées"
                 : "Aucune classe configurée"}
@@ -138,8 +138,8 @@ export function UrgentActionCenter() {
             <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
               {unconfiguredClassesCount > 0
                 ? "Définissez le calendrier et montant pour ces classes."
-                : dashboardMetrics.students_credit > 0
-                ? "Vérifier l'imputation des versements anticipés."
+                : dashboardMetrics.students_late > 0
+                ? "Échéance récemment dépassée, relance recommandée."
                 : classes.length > 0
                 ? `Les montants et échéanciers de vos ${classes.length} classes sont opérationnels.`
                 : "Configurez vos classes et grilles de scolarité."}
@@ -147,14 +147,14 @@ export function UrgentActionCenter() {
           </div>
 
           <Link
-            href={unconfiguredClassesCount > 0 ? "/tuition" : dashboardMetrics.students_credit > 0 ? "/students" : "/tuition"}
+            href={unconfiguredClassesCount > 0 ? "/tuition" : dashboardMetrics.students_late > 0 ? "/debts?filter=late" : "/tuition"}
             className="mt-4 inline-flex items-center justify-between w-full px-3 py-2 bg-blue-600 group-hover:bg-blue-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
             <span>
               {unconfiguredClassesCount > 0
                 ? "Configurer les tarifs"
-                : dashboardMetrics.students_credit > 0
-                ? "Vérifier les comptes"
+                : dashboardMetrics.students_late > 0
+                ? "Relancer les retards"
                 : "Consulter les grilles"}
             </span>
             <ArrowRight className="w-3.5 h-3.5" />

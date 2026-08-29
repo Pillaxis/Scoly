@@ -6,10 +6,8 @@ import {
   FileText,
   Camera,
   Calendar,
-  Sparkles,
   ArrowRight,
   ShieldCheck,
-  Zap,
 } from "lucide-react";
 import { ImportSourceType } from "@/types/import";
 import { AcademicYear } from "@/types/scoly";
@@ -40,36 +38,36 @@ export function SourceSelector({
   }[] = [
     {
       id: "excel",
-      title: "📊 Importer Excel / CSV",
-      subtitle: "Importez un fichier existant depuis votre ordinateur ou clé USB",
+      title: "📊 Fichier Excel / CSV / PDF",
+      subtitle: "Importez vos listes d'élèves depuis un fichier tableur ou document PDF",
       icon: FileSpreadsheet,
-      badge: ".xlsx, .xls, .csv",
+      badge: ".xlsx, .xls, .csv, .pdf",
       accentColor: "text-emerald-600",
       borderActive: "border-emerald-500 ring-2 ring-emerald-500/20",
       bgActive: "bg-emerald-50/50",
-      details: ["Détection automatique des colonnes", "Support multi-feuilles", "Validation avant écriture"],
+      details: ["Détection automatique des colonnes", "Support Excel, CSV et documents PDF", "Validation et correction assistée"],
     },
     {
       id: "google_sheets",
-      title: "📄 Importer Google Sheets",
-      subtitle: "Connectez ou importez vos données directement depuis Google Sheets",
+      title: "📄 Google Sheets en Direct",
+      subtitle: "Connectez ou importez vos données via un lien de partage Google Sheets",
       icon: FileText,
-      badge: "Lien & Export Sheets",
+      badge: "Proxy Anti-CORS",
       accentColor: "text-blue-600",
       borderActive: "border-blue-500 ring-2 ring-blue-500/20",
       bgActive: "bg-blue-50/50",
-      details: ["Lien de partage direct", "Compatible Google Drive", "Conversion instantanée"],
+      details: ["Lien de partage direct Google Drive", "Synchronisation instantanée", "Aucun téléchargement préalable requis"],
     },
     {
       id: "photo_ocr",
-      title: "📷 Scanner un registre papier",
-      subtitle: "Prenez une photo de votre cahier d'inscription ou registre de paiements",
+      title: "📷 Scanner de Registre Papier (OCR)",
+      subtitle: "Prenez une photo de votre cahier d'inscription ou registre de classe",
       icon: Camera,
-      badge: "Photo & OCR Mobile",
+      badge: "Revue Assistée",
       accentColor: "text-purple-600",
       borderActive: "border-purple-500 ring-2 ring-purple-500/20",
       bgActive: "bg-purple-50/50",
-      details: ["Reconnaissance optique réelle", "Vérification humaine obligatoire", "Prise de vue smartphone"],
+      details: ["Reconnaissance optique par caméra", "Écran de vérification assistée", "Zéro ressaisie manuelle"],
     },
   ];
 
@@ -98,7 +96,7 @@ export function SourceSelector({
 
         <div className="flex items-center gap-2 text-xs text-slate-500 bg-white px-3.5 py-2 rounded-xl border border-slate-200/80">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Toutes les données importées seront vérifiées et prévisualisées avant enregistrement.</span>
+          <span>Toutes les données importées sont vérifiées et prévisualisées avant enregistrement.</span>
         </div>
       </div>
 
