@@ -514,28 +514,14 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 1. Initial Session Check
-    client.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const u: AuthUser = {
-          id: session.user.id,
-          email: session.user.email || "",
-          full_name: session.user.user_metadata?.full_name,
-          first_name: session.user.user_metadata?.first_name,
-          last_name: session.user.user_metadata?.last_name,
-          phone: session.user.user_metadata?.phone,
-        };
-        setCurrentUser(u);
-        fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
-      } else {
-        fetchAllFromSupabase();
-      }
-    });
+    let isMounted = true;
+    let initialHandled = false;
 
-    // 2. Real-Time Auth State Changes (PC <-> Mobile login events)
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+
       if (session?.user) {
         const u: AuthUser = {
           id: session.user.id,
@@ -547,12 +533,18 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         };
         setCurrentUser(u);
         fetchAllFromSupabase(undefined, session.user.id, session.user.email || "");
+        initialHandled = true;
       } else {
         setCurrentUser(null);
+        if (!initialHandled) {
+          setIsLoaded(true);
+          initialHandled = true;
+        }
       }
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, [fetchAllFromSupabase]);

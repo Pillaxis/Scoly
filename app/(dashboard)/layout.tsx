@@ -46,18 +46,26 @@ export function useGlobalModals() {
 
 function DashboardShellContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { payments, currentUser, school, isLoaded } = useScoly();
+  const { payments, currentUser, isLoaded } = useScoly();
 
-  // Route protection
+  // Route protection: redirect to login if not authenticated
   useEffect(() => {
-    if (isLoaded) {
-      if (!currentUser) {
-        router.push("/login");
-      } else if (school.onboarding_completed === false) {
-        router.push("/onboarding");
-      }
+    if (isLoaded && !currentUser) {
+      router.replace("/login");
     }
-  }, [isLoaded, currentUser, school.onboarding_completed, router]);
+  }, [isLoaded, currentUser, router]);
+
+  // Synchronous protection: NEVER render dashboard shell while loading or unauthenticated
+  if (!isLoaded || !currentUser) {
+    return (
+      <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+          <div className="w-4 h-4 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+          <span>Chargement de votre espace...</span>
+        </div>
+      </div>
+    );
+  }
 
   // Modals state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);

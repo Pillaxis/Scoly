@@ -27,12 +27,20 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // If already logged in, redirect immediately without showing the login form
+  useEffect(() => {
+    if (isLoaded && currentUser) {
+      router.replace(school.onboarding_completed === false ? "/onboarding" : "/dashboard");
+    }
+  }, [isLoaded, currentUser, school.onboarding_completed, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    if (!email.trim()) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
       setErrorMsg("Veuillez saisir votre adresse e-mail.");
       return;
     }
@@ -44,18 +52,12 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await loginUser(email.trim().toLowerCase(), password);
+      const res = await loginUser(cleanEmail, password);
       if (res.success) {
-        setSuccessMsg("Connexion réussie ! Redirection en cours...");
-        setTimeout(() => {
-          if (school.onboarding_completed === false) {
-            router.push("/onboarding");
-          } else {
-            router.push("/dashboard");
-          }
-        }, 800);
+        setSuccessMsg("Connexion réussie !");
+        // Instant seamless navigation
+        router.replace(school.onboarding_completed === false ? "/onboarding" : "/dashboard");
       } else {
-
         setErrorMsg(res.error || "Adresse email ou mot de passe incorrect.");
       }
     } catch (err: any) {
@@ -64,6 +66,14 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (!isLoaded || (currentUser && isLoaded)) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-4 h-4 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#c7d2fe] via-[#a5b4fc] to-[#818cf8] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans relative overflow-hidden">

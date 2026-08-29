@@ -11,7 +11,6 @@ import {
   ArrowRight,
   Plus,
   Trash2,
-  Sparkles,
   Calculator,
   ShieldCheck,
   School as SchoolIcon,
@@ -35,8 +34,10 @@ import { parseExcelOrCsvFile, ParsedSheetData } from "@/lib/import/parsers/excel
 // ─────────────────────────────────────────────────────────────────────────────
 export function Step1ImportStudents({
   onContinue,
+  onSkip,
 }: {
   onContinue: () => void;
+  onSkip?: () => void;
 }) {
   const { students, classes } = useScoly();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -111,7 +112,7 @@ export function Step1ImportStudents({
   const hasStudents = students.length > 0;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-6 animate-in fade-in duration-150">
       {/* Hidden file inputs for direct device selection */}
       <input
         ref={excelInputRef}
@@ -138,22 +139,18 @@ export function Step1ImportStudents({
         }}
       />
 
-      {/* Header */}
-      <div className="space-y-1.5 text-center sm:text-left">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Étape 1 sur 3</span>
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          1. Importez vos élèves
+      {/* Header épuré */}
+      <div className="space-y-1">
+        <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          1. Importer les élèves
         </h2>
-        <p className="text-xs sm:text-sm text-slate-500 max-w-xl">
-          Sélectionnez directement votre fichier depuis votre appareil. Vos élèves et vos classes seront automatiquement détectés.
+        <p className="text-xs text-slate-500 max-w-lg">
+          Ajoutez votre liste d&apos;élèves depuis un fichier de votre appareil ou collez un lien.
         </p>
       </div>
 
       {parseError && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-2xl flex items-center gap-2">
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
           <span>{parseError}</span>
         </div>
@@ -161,15 +158,15 @@ export function Step1ImportStudents({
 
       {/* If students are already present */}
       {hasStudents ? (
-        <div className="p-6 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-3xl space-y-4">
+        <div className="p-5 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/20">
-                <CheckCircle2 className="w-6 h-6" />
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-emerald-950">
-                  ✓ {students.length} élève{students.length > 1 ? "s" : ""} déjà importé{students.length > 1 ? "s" : ""}
+                <h3 className="text-sm font-extrabold text-emerald-950">
+                  {students.length} élève{students.length > 1 ? "s" : ""} déjà importé{students.length > 1 ? "s" : ""}
                 </h3>
                 <p className="text-xs text-emerald-700">
                   Répartis dans {classes.length} classe{classes.length > 1 ? "s" : ""} détectée{classes.length > 1 ? "s" : ""}.
@@ -180,21 +177,21 @@ export function Step1ImportStudents({
             <button
               type="button"
               onClick={() => excelInputRef.current?.click()}
-              className="px-3.5 py-2 bg-white hover:bg-emerald-100/50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-3 py-1.5 bg-white hover:bg-emerald-100/50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
             >
-              <Plus className="w-4 h-4" />
-              <span>Importer d&apos;autres élèves</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Ajouter d&apos;autres élèves</span>
             </button>
           </div>
 
           {/* Classes pill list preview */}
           {classes.length > 0 && (
             <div className="pt-2 border-t border-emerald-200/60 flex flex-wrap gap-1.5 items-center">
-              <span className="text-[11px] font-bold text-emerald-900 mr-1">Classes créées :</span>
+              <span className="text-[11px] font-bold text-emerald-900 mr-1">Classes :</span>
               {classes.slice(0, 8).map((c) => (
                 <span
                   key={c.id}
-                  className="px-2.5 py-1 bg-white text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold"
+                  className="px-2 py-0.5 bg-white text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold"
                 >
                   {c.name}
                 </span>
@@ -207,11 +204,21 @@ export function Step1ImportStudents({
             </div>
           )}
 
-          <div className="pt-3 flex justify-end">
+          <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
+            {onSkip && (
+              <button
+                type="button"
+                onClick={onSkip}
+                className="text-xs text-slate-500 hover:text-slate-800 font-semibold transition-colors cursor-pointer"
+              >
+                Passer pour l&apos;instant
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onContinue}
-              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-blue-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ml-auto"
             >
               <span>Continuer vers les tarifs</span>
               <ArrowRight className="w-4 h-4" />
@@ -219,90 +226,100 @@ export function Step1ImportStudents({
           </div>
         </div>
       ) : (
-        /* 4 Simple Direct Import Cards */
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-          {/* Option 1: Excel / CSV (Direct Device File Selector) */}
-          <button
-            type="button"
-            onClick={() => excelInputRef.current?.click()}
-            disabled={isParsing}
-            className="p-5 bg-white hover:bg-blue-50/50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl text-left transition-all duration-200 group cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between min-h-[140px]"
-          >
-            <div className="flex items-start justify-between">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <FileSpreadsheet className="w-6 h-6" />
+        /* 4 Simple Direct Import Options */
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Option 1: Excel / CSV (Direct Device File Selector) */}
+            <button
+              type="button"
+              onClick={() => excelInputRef.current?.click()}
+              disabled={isParsing}
+              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <FileSpreadsheet className="w-5 h-5" />
               </div>
-              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {isParsing ? "Lecture..." : "Depuis l'appareil"}
-              </span>
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                Choisir un fichier Excel ou CSV
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Ouvre directement les fichiers de votre ordinateur ou téléphone (.xlsx, .csv).
-              </p>
-            </div>
-          </button>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xs font-extrabold text-slate-900">
+                  Fichier Excel ou CSV
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Depuis votre ordinateur ou téléphone
+                </p>
+              </div>
+            </button>
 
-          {/* Option 2: Google Sheets */}
-          <button
-            type="button"
-            onClick={() => openImport("google_sheets")}
-            className="p-5 bg-white hover:bg-blue-50/50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl text-left transition-all duration-200 group cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between min-h-[140px]"
-          >
-            <div className="w-11 h-11 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Link2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                Google Sheets
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Collez simplement le lien de partage de votre tableau Google en ligne.
-              </p>
-            </div>
-          </button>
+            {/* Option 2: Document PDF (Direct Device File Selector) */}
+            <button
+              type="button"
+              onClick={() => pdfInputRef.current?.click()}
+              disabled={isParsing}
+              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xs font-extrabold text-slate-900">
+                  Document PDF
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Liste imprimée ou registre PDF
+                </p>
+              </div>
+            </button>
 
-          {/* Option 3: Document PDF (Direct Device File Selector) */}
-          <button
-            type="button"
-            onClick={() => pdfInputRef.current?.click()}
-            disabled={isParsing}
-            className="p-5 bg-white hover:bg-blue-50/50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl text-left transition-all duration-200 group cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between min-h-[140px]"
-          >
-            <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                Choisir un Document PDF
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Sélectionnez une liste d&apos;élèves ou un registre PDF de votre appareil.
-              </p>
-            </div>
-          </button>
+            {/* Option 3: Google Sheets */}
+            <button
+              type="button"
+              onClick={() => openImport("google_sheets")}
+              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
+                <Link2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xs font-extrabold text-slate-900">
+                  Google Sheets
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Lien de partage de tableau en ligne
+                </p>
+              </div>
+            </button>
 
-          {/* Option 4: Photo / Caméra */}
-          <button
-            type="button"
-            onClick={() => openImport("photo_ocr")}
-            className="p-5 bg-white hover:bg-blue-50/50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl text-left transition-all duration-200 group cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between min-h-[140px]"
-          >
-            <div className="w-11 h-11 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Camera className="w-6 h-6" />
+            {/* Option 4: Photo / Caméra */}
+            <button
+              type="button"
+              onClick={() => openImport("photo_ocr")}
+              className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-2xl text-left transition-all group cursor-pointer shadow-2xs flex items-center gap-3.5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
+                <Camera className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xs font-extrabold text-slate-900">
+                  Photo de registre (OCR)
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Photo de registre papier ou feuille
+                </p>
+              </div>
+            </button>
+          </div>
+
+          {/* Action passer pour l'instant */}
+          {onSkip && (
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={onSkip}
+                className="text-xs text-slate-500 hover:text-slate-900 font-semibold underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Passer pour l&apos;instant et aller au tableau de bord
+              </button>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                Photo de registre (OCR)
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Prenez en photo une feuille de classe ou un registre papier avec la caméra.
-              </p>
-            </div>
-          </button>
+          )}
         </div>
       )}
 
@@ -327,8 +344,10 @@ export function Step1ImportStudents({
 // ─────────────────────────────────────────────────────────────────────────────
 export function Step2SetupTuition({
   onContinue,
+  onSkip,
 }: {
   onContinue: () => void;
+  onSkip?: () => void;
 }) {
   const { classes, tuitionPlans, academicYear, school, updateTuitionPlans } = useScoly();
 
@@ -467,61 +486,64 @@ export function Step2SetupTuition({
 
   if (classes.length === 0) {
     return (
-      <div className="p-8 text-center bg-white border border-slate-200 rounded-3xl space-y-4">
-        <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-          <AlertTriangle className="w-6 h-6" />
+      <div className="p-6 text-center bg-white border border-slate-200 rounded-2xl space-y-3">
+        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-5 h-5" />
         </div>
         <div>
-          <h3 className="text-base font-bold text-slate-900">Aucune classe détectée</h3>
+          <h3 className="text-sm font-bold text-slate-900">Aucune classe détectée</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Veuillez d&apos;abord importer vos élèves à l&apos;étape 1 pour que vos classes soient automatiquement créées.
+            Veuillez d&apos;abord importer vos élèves à l&apos;étape 1 pour créer vos classes automatiquement.
           </p>
         </div>
+        {onSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-xs text-slate-500 hover:text-slate-800 font-semibold underline underline-offset-4 cursor-pointer"
+          >
+            Passer pour l&apos;instant
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Header */}
-      <div className="space-y-1.5 text-center sm:text-left">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">
-          <Calculator className="w-3.5 h-3.5" />
-          <span>Étape 2 sur 3</span>
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          2. Configurez vos tarifs
+    <div className="space-y-5 animate-in fade-in duration-150">
+      {/* Header épuré */}
+      <div className="space-y-1">
+        <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          2. Configurer les tarifs
         </h2>
-        <p className="text-xs sm:text-sm text-slate-500 max-w-xl">
-          Indiquez combien chaque élève doit payer pour l&apos;année scolaire. La somme des tranches doit correspondre exactement au montant annuel.
+        <p className="text-xs text-slate-500 max-w-lg">
+          Définissez le montant annuel de la scolarité par classe.
         </p>
       </div>
 
       {/* Quick Apply to All Bar */}
-      <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-700">Appliquer un tarif unique à toutes les classes :</span>
-        </div>
+      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-2.5 text-xs">
+        <span className="font-bold text-slate-700">Appliquer un tarif à toutes les classes :</span>
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <input
             type="number"
             placeholder="Ex: 120000"
             value={globalAmountInput}
             onChange={(e) => setGlobalAmountInput(e.target.value)}
-            className="w-32 px-3 py-1.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
+            className="w-32 px-2.5 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
           />
           <button
             type="button"
             onClick={handleApplyToAll}
-            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer"
+            className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer"
           >
-            Appliquer partout
+            Appliquer
           </button>
         </div>
       </div>
 
       {/* Classes Tuition List */}
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {classes.map((c) => {
           const plan = plansState[c.id] || { total: 0, installments: [] };
           const validity = validityMap[c.id] || { isValid: true, sum: 0 };
@@ -530,27 +552,27 @@ export function Step2SetupTuition({
           return (
             <div
               key={c.id}
-              className={`border rounded-2xl p-4 transition-all duration-150 ${
+              className={`border rounded-xl p-3.5 transition-all ${
                 !validity.isValid
                   ? "bg-rose-50/40 border-rose-300"
-                  : "bg-white border-slate-200 hover:border-slate-300"
+                  : "bg-white border-slate-200"
               }`}
             >
               {/* Row header */}
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
                     {c.name.slice(0, 3)}
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm text-slate-900">{c.name}</h3>
-                    <span className="text-[11px] text-slate-500 font-medium">{c.level || "Classe standard"}</span>
+                    <h3 className="font-bold text-xs text-slate-900">{c.name}</h3>
+                    <span className="text-[10px] text-slate-400 font-medium">{c.level || "Classe standard"}</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5">
-                    <label className="text-xs font-bold text-slate-600">Scolarité annuelle :</label>
+                    <label className="text-xs font-bold text-slate-600">Scolarité :</label>
                     <div className="relative">
                       <input
                         type="number"
@@ -558,16 +580,16 @@ export function Step2SetupTuition({
                         step="1000"
                         value={plan.total || ""}
                         onChange={(e) => handleTotalChange(c.id, Number(e.target.value))}
-                        className="w-32 px-3 py-1.5 bg-slate-50 border border-slate-300 focus:bg-white focus:ring-2 focus:ring-blue-600 rounded-xl font-black text-slate-900 text-xs focus:outline-none text-right pr-7"
+                        className="w-28 px-2 py-1 bg-slate-50 border border-slate-300 focus:bg-white rounded-lg font-bold text-slate-900 text-xs focus:outline-none text-right pr-6"
                       />
-                      <span className="absolute right-2 top-2 text-[10px] text-slate-400 font-bold">F</span>
+                      <span className="absolute right-2 top-1.5 text-[10px] text-slate-400 font-bold">F</span>
                     </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setExpandedClassId(isExpanded ? null : c.id)}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    className="p-1 text-slate-400 hover:text-slate-700 rounded-md transition-colors cursor-pointer"
                     title="Détail des tranches"
                   >
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -577,20 +599,20 @@ export function Step2SetupTuition({
 
               {/* Error banner if unequal */}
               {!validity.isValid && validity.error && (
-                <div className="mt-3 p-2.5 bg-rose-100/70 border border-rose-200 text-rose-900 rounded-xl text-xs flex items-center gap-2 font-medium">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <div className="mt-2 p-2 bg-rose-100 border border-rose-200 text-rose-900 rounded-lg text-[11px] flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                   <span>{validity.error}</span>
                 </div>
               )}
 
-              {/* Installments details (Always visible if expanded or if error) */}
+              {/* Installments details */}
               {(isExpanded || !validity.isValid) && (
-                <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="mt-3 pt-2.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {plan.installments.map((inst, idx) => (
-                    <div key={inst.id || idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                    <div key={inst.id || idx} className="p-2 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
                         <span>{inst.title || `Tranche ${idx + 1}`}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">{inst.due_date}</span>
+                        <span className="text-[9px] text-slate-400">{inst.due_date}</span>
                       </div>
                       <div className="relative">
                         <input
@@ -599,9 +621,9 @@ export function Step2SetupTuition({
                           step="1000"
                           value={inst.amount || ""}
                           onChange={(e) => handleInstallmentAmountChange(c.id, idx, Number(e.target.value))}
-                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 text-right pr-6"
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded-md text-xs font-bold text-slate-900 focus:outline-none text-right pr-5"
                         />
-                        <span className="absolute right-2 top-2 text-[10px] text-slate-400 font-bold">F</span>
+                        <span className="absolute right-1.5 top-1.5 text-[9px] text-slate-400 font-bold">F</span>
                       </div>
                     </div>
                   ))}
@@ -612,15 +634,25 @@ export function Step2SetupTuition({
         })}
       </div>
 
-      {/* Footer validation button */}
-      <div className="pt-4 flex justify-end">
+      {/* Footer buttons */}
+      <div className="pt-3 flex items-center justify-between flex-wrap gap-3">
+        {onSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-xs text-slate-500 hover:text-slate-800 font-semibold underline underline-offset-4 transition-colors cursor-pointer"
+          >
+            Passer pour l&apos;instant
+          </button>
+        )}
+
         <button
           type="button"
           onClick={handleSaveAndContinue}
           disabled={!isAllValid || isSaving}
-          className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 text-white rounded-2xl text-xs font-black shadow-lg shadow-blue-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+          className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ml-auto"
         >
-          <span>{isSaving ? "Enregistrement des tarifs..." : "Valider mes tarifs & continuer"}</span>
+          <span>{isSaving ? "Enregistrement..." : "Valider et continuer"}</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
@@ -638,50 +670,46 @@ export function Step3ReadyPayments({
   onFinish: () => void;
   onOpenPayment: () => void;
 }) {
-  const { students, classes, tuitionPlans } = useScoly();
+  const { students, classes } = useScoly();
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200 text-center max-w-xl mx-auto py-4">
-      {/* Header Badge */}
-      <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/25">
-        <Check className="w-8 h-8 stroke-[3]" />
+    <div className="space-y-5 animate-in fade-in duration-150 text-center max-w-md mx-auto py-2">
+      {/* Icon */}
+      <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-xs">
+        <Check className="w-6 h-6 stroke-[3]" />
       </div>
 
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Étape 3 sur 3 • Établissement prêt</span>
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-          3. Commencez à enregistrer les paiements
+      <div className="space-y-1">
+        <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          3. Enregistrer les paiements
         </h2>
-        <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-          Votre établissement est parfaitement configuré. Vos élèves et leurs tarifs sont prêts. Vous pouvez immédiatement encaisser votre premier versement.
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Votre établissement est prêt. Vous pouvez commencer à enregistrer les encaissements ou accéder au tableau de bord.
         </p>
       </div>
 
-      {/* Summary Checklist */}
-      <div className="p-5 bg-slate-50 border border-slate-200/90 rounded-3xl text-left space-y-3 shadow-2xs">
-        <div className="flex items-center gap-3 text-xs text-slate-700 font-bold">
+      {/* Summary Box */}
+      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
+        <div className="flex items-center gap-2.5 font-bold text-slate-700">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{students.length} élève{students.length > 1 ? "s" : ""} enregistré{students.length > 1 ? "s" : ""} avec succès</span>
+          <span>{students.length} élève{students.length > 1 ? "s" : ""} enregistré{students.length > 1 ? "s" : ""}</span>
         </div>
-        <div className="flex items-center gap-3 text-xs text-slate-700 font-bold">
+        <div className="flex items-center gap-2.5 font-bold text-slate-700">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{classes.length} classe{classes.length > 1 ? "s" : ""} et leurs grilles tarifaires activées</span>
+          <span>{classes.length} classe{classes.length > 1 ? "s" : ""} avec tarifs configurés</span>
         </div>
-        <div className="flex items-center gap-3 text-xs text-slate-700 font-bold">
+        <div className="flex items-center gap-2.5 font-bold text-slate-700">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Moteur de caisse transactionnel & reçus certifiés prêts</span>
+          <span>Reçus et caisse prêts</span>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+      <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
         <button
           type="button"
           onClick={onOpenPayment}
-          className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-emerald-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+          className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
         >
           <CreditCard className="w-4 h-4" />
           <span>Enregistrer un paiement</span>
@@ -690,9 +718,9 @@ export function Step3ReadyPayments({
         <button
           type="button"
           onClick={onFinish}
-          className="w-full sm:w-auto px-7 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-black shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+          className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
         >
-          <span>Accéder au tableau de bord</span>
+          <span>Aller au tableau de bord</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -92,19 +92,25 @@ export default function RegisterPage() {
       });
 
       if (res.success) {
-        setSuccessMsg("Votre compte a été créé avec succès ! Préparation de votre espace...");
-        setTimeout(() => {
-          router.push("/onboarding");
-        }, 800);
+        setSuccessMsg("Votre compte a été créé avec succès !");
+        router.replace("/onboarding");
       } else {
         setErrorMsg(res.error || "Impossible de créer le compte. Veuillez réessayer.");
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || "Une erreur inattendue est survenue.");
+      setErrorMsg(err?.message || "Une erreur est survenue lors de l'inscription.");
     } finally {
       setLoading(false);
     }
   };
+
+  if (!isLoaded || (currentUser && isLoaded)) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-4 h-4 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#c7d2fe] via-[#a5b4fc] to-[#818cf8] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans relative overflow-hidden">

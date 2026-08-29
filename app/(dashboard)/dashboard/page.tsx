@@ -10,6 +10,7 @@ import { PaymentMethodsBreakdown } from "@/components/dashboard/PaymentMethodsBr
 import { RecentPaymentsSection } from "@/components/dashboard/RecentPaymentsSection";
 import { DebtorsPreviewSection } from "@/components/dashboard/DebtorsPreviewSection";
 import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
+import { OnboardingProgressBanner } from "@/components/dashboard/OnboardingProgressBanner";
 import { useGlobalModals } from "../layout";
 import { useScoly } from "@/lib/store";
 
@@ -35,6 +36,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+      {/* Discrete Onboarding Progress Reminder */}
+      <OnboardingProgressBanner />
       {/* Welcome Banner after Onboarding */}
       {showWelcome && (
         <div className="p-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white rounded-2xl shadow-lg flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
