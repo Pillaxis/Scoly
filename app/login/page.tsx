@@ -55,8 +55,12 @@ export default function LoginPage() {
       const res = await loginUser(cleanEmail, password);
       if (res.success) {
         setSuccessMsg("Connexion réussie !");
-        // Instant seamless navigation
-        router.replace(school.onboarding_completed === false ? "/onboarding" : "/dashboard");
+        const loadedSchool = res.school || school;
+        const targetPath =
+          loadedSchool && loadedSchool.onboarding_completed === false
+            ? "/onboarding"
+            : "/dashboard";
+        router.replace(targetPath);
       } else {
         setErrorMsg(res.error || "Adresse email ou mot de passe incorrect.");
       }

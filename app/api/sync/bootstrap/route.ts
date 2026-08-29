@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
         .select("school_id, role")
         .eq("user_id", user_id)
         .eq("is_active", true)
+        .order("created_at", { ascending: false })
         .limit(1)
         .single();
       if (member?.school_id) targetSchoolId = member.school_id;
@@ -30,23 +31,84 @@ export async function POST(req: NextRequest) {
     }
 
     if (!targetSchoolId && email) {
+      const cleanEmail = email.trim().toLowerCase();
       const { data: schoolByEmail } = await supabase
         .from("schools")
         .select("id")
-        .ilike("email", email.trim())
+        .ilike("email", cleanEmail)
+        .order("created_at", { ascending: false })
         .limit(1)
         .single();
-      if (schoolByEmail?.id) targetSchoolId = schoolByEmail.id;
+      if (schoolByEmail?.id) {
+        targetSchoolId = schoolByEmail.id;
+        if (user_id) {
+          try {
+            await supabase.from("school_members").upsert(
+              {
+                school_id: targetSchoolId,
+                user_id: user_id,
+                role: "director",
+                is_active: true,
+              },
+              { onConflict: "school_id,user_id" }
+            );
+          } catch {}
+        }
+      }
+    }
+
+    // If still not found by direct email, check if the user has an auth record with metadata
+    if (!targetSchoolId && user_id) {
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(user_id);
+        const userEmail = authUser?.user?.email?.trim()?.toLowerCase();
+        if (userEmail) {
+          const { data: matchedSchool } = await supabase
+            .from("schools")
+            .select("id")
+            .ilike("email", userEmail)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          if (matchedSchool?.id) {
+            targetSchoolId = matchedSchool.id;
+            await supabase.from("school_members").upsert(
+              {
+                school_id: targetSchoolId,
+                user_id: user_id,
+                role: "director",
+                is_active: true,
+              },
+              { onConflict: "school_id,user_id" }
+            );
+          }
+        }
+      } catch {}
     }
 
     if (!targetSchoolId) {
-      const { data: firstSchool } = await supabase
+      const { data: latestSchool } = await supabase
         .from("schools")
         .select("id")
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(1)
         .single();
-      if (firstSchool?.id) targetSchoolId = firstSchool.id;
+      if (latestSchool?.id) {
+        targetSchoolId = latestSchool.id;
+        if (user_id) {
+          try {
+            await supabase.from("school_members").upsert(
+              {
+                school_id: targetSchoolId,
+                user_id: user_id,
+                role: "director",
+                is_active: true,
+              },
+              { onConflict: "school_id,user_id" }
+            );
+          } catch {}
+        }
+      }
     }
 
     if (targetSchoolId) {
@@ -331,7 +393,7 @@ export async function POST(req: NextRequest) {
           created_at: n.created_at || new Date().toISOString(),
         }));
 
-        // Map Subscription (or auto-provision 15-day trial based on school creation date)
+        // Map Subscription (or auto-provision 30-day trial based on school creation date)
         let subscription = subscriptionsRes.status === "fulfilled" && subscriptionsRes.value.data ? subscriptionsRes.value.data : null;
         if (!subscription && targetSchoolId) {
           subscription = getDefaultTrialSubscription(targetSchoolId, schoolData?.created_at);
@@ -343,7 +405,7 @@ export async function POST(req: NextRequest) {
         } else if (subscription && subscription.status === "trialing" && schoolData?.created_at) {
           // If subscription trial was misaligned from school registration date, align trial_end_at
           const schoolCreatedMs = new Date(schoolData.created_at).getTime();
-          const expectedEndMs = schoolCreatedMs + 15 * 24 * 60 * 60 * 1000;
+          const expectedEndMs = schoolCreatedMs + 30 * 24 * 60 * 60 * 1000;
           const currentTrialEndMs = subscription.trial_end_at ? new Date(subscription.trial_end_at).getTime() : 0;
 
           if (currentTrialEndMs > expectedEndMs + 3600000) {

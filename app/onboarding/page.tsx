@@ -56,29 +56,28 @@ export default function OnboardingPage() {
 
   // Sync and smart resume based on existing real data
   useEffect(() => {
-    if (isLoaded && !isInitializedRef.current) {
+    if (isLoaded) {
       if (!currentUser) {
         router.replace("/login");
         return;
       }
 
-      isInitializedRef.current = true;
+      // If school already completed onboarding OR if school already has students saved -> go directly to dashboard
+      if (school.onboarding_completed || students.length > 0) {
+        router.replace("/dashboard");
+        return;
+      }
 
-      // Smart resume logic:
-      // If user already has students & tuition plans configured -> Step 3
-      // Else if user already has students -> Step 2
-      // Else -> Step 1 (or stored step)
-      if (students.length > 0 && tuitionPlans.some((tp) => tp.total_amount > 0)) {
-        setCurrentStep(3);
-      } else if (students.length > 0) {
-        setCurrentStep(2);
-      } else if (school.onboarding_current_step && school.onboarding_current_step >= 1 && school.onboarding_current_step <= 3) {
-        setCurrentStep(school.onboarding_current_step);
-      } else {
-        setCurrentStep(1);
+      if (!isInitializedRef.current) {
+        isInitializedRef.current = true;
+        if (school.onboarding_current_step && school.onboarding_current_step >= 1 && school.onboarding_current_step <= 3) {
+          setCurrentStep(school.onboarding_current_step);
+        } else {
+          setCurrentStep(1);
+        }
       }
     }
-  }, [isLoaded, currentUser, school, students.length, tuitionPlans, router]);
+  }, [isLoaded, currentUser, school.onboarding_completed, school.onboarding_current_step, students.length, router]);
 
   const totalSteps = 3;
 

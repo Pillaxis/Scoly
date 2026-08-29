@@ -165,7 +165,7 @@ interface ScolyContextType {
 
   // Authentication & Account
   currentUser: AuthUser | null;
-  loginUser: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  loginUser: (email: string, pass: string) => Promise<{ success: boolean; error?: string; school?: School }>;
   registerUser: (
     emailOrParams:
       | string
@@ -329,174 +329,181 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("syncing");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | undefined>();
-  const isSyncingRef = useRef(false);
+  const syncPromiseRef = useRef<Promise<{ success: boolean; school?: School; studentsCount?: number }> | null>(null);
   const lastAnalysisTimeRef = useRef<number>(0);
   const proFeatureSuggestionCooldownRef = useRef<Record<string, number>>({});
 
-
-
   // ─── 1. FETCH ALL DATA LIVE DIRECTLY FROM SUPABASE POSTGRESQL ───────────────
   const fetchAllFromSupabase = useCallback(
-    async (targetSchoolId?: string, targetUserId?: string, targetEmail?: string) => {
+    async (targetSchoolId?: string, targetUserId?: string, targetEmail?: string): Promise<{ success: boolean; school?: School; studentsCount?: number }> => {
       if (!isSupabaseConfigured) {
         setSyncStatus("offline");
         setIsLoaded(true);
-        return false;
+        return { success: false };
       }
 
-      if (isSyncingRef.current) return false;
-      isSyncingRef.current = true;
+      if (syncPromiseRef.current) {
+        return syncPromiseRef.current;
+      }
+
       setSyncStatus("syncing");
 
-      try {
-        // 1. Direct Server Bootstrap API (Fetches all relations in parallel from PostgreSQL)
-        const res = await fetch("/api/sync/bootstrap", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            school_id: targetSchoolId,
-            user_id: targetUserId,
-            email: targetEmail,
-          }),
-        });
+      const executeFetch = async (): Promise<{ success: boolean; school?: School; studentsCount?: number }> => {
+        try {
+          // 1. Direct Server Bootstrap API (Fetches all relations in parallel from PostgreSQL)
+          const res = await fetch("/api/sync/bootstrap", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              school_id: targetSchoolId,
+              user_id: targetUserId,
+              email: targetEmail,
+            }),
+          });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.school) {
-            setSchool(data.school);
-            if (data.academicYear) {
-              setAcademicYear(data.academicYear);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.school) {
+              setSchool(data.school);
+              if (data.academicYear) {
+                setAcademicYear(data.academicYear);
+              }
+              if (Array.isArray(data.academicYearsList) && data.academicYearsList.length > 0) {
+                setAcademicYearsList(data.academicYearsList);
+              }
+              if (Array.isArray(data.classes)) {
+                setClasses(data.classes);
+              }
+              if (Array.isArray(data.students)) {
+                setStudents(data.students);
+              }
+              if (Array.isArray(data.payments)) {
+                setPayments(data.payments);
+              }
+              if (Array.isArray(data.tuitionPlans)) {
+                setTuitionPlans(data.tuitionPlans);
+              }
+              if (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0) {
+                setPaymentMethods(data.paymentMethods);
+              }
+              if (Array.isArray(data.reminders)) {
+                setReminders(data.reminders);
+              }
+              if (Array.isArray(data.importBatches)) {
+                setImportBatches(data.importBatches);
+              }
+              if (Array.isArray(data.auditLogs)) {
+                setAuditLogs(data.auditLogs);
+              }
+              if (Array.isArray(data.notifications)) {
+                let localReadIds: string[] = [];
+                if (typeof window !== "undefined" && data.school?.id) {
+                  try {
+                    const stored = localStorage.getItem(`scoly_read_notifs_${data.school.id}`);
+                    if (stored) localReadIds = JSON.parse(stored);
+                  } catch {}
+                }
+                const localReadSet = new Set(localReadIds);
+                const mergedNotifs = data.notifications.map((n: any) => ({
+                  ...n,
+                  is_read: n.is_read || localReadSet.has(n.id) || (n.dedup_key && localReadSet.has(n.dedup_key)),
+                }));
+                setNotifications(mergedNotifs);
+              }
+              if (data.subscription) {
+                setSubscription(data.subscription);
+              } else if (data.school?.id) {
+                setSubscription(getDefaultTrialSubscription(data.school.id, data.school?.created_at));
+              }
+              if (data.userRole) {
+                setCurrentUser((prev) => (prev ? { ...prev, role: data.userRole } : null));
+              }
+
+              setSyncStatus("synced");
+              setSyncErrorMessage(undefined);
+              setIsLoaded(true);
+              return {
+                success: true,
+                school: data.school,
+                studentsCount: Array.isArray(data.students) ? data.students.length : 0,
+              };
             }
-            if (Array.isArray(data.academicYearsList) && data.academicYearsList.length > 0) {
-              setAcademicYearsList(data.academicYearsList);
-            }
-            if (Array.isArray(data.classes)) {
-              setClasses(data.classes);
-            }
-            if (Array.isArray(data.students)) {
-              setStudents(data.students);
-            }
-            if (Array.isArray(data.payments)) {
-              setPayments(data.payments);
-            }
-            if (Array.isArray(data.tuitionPlans)) {
-              setTuitionPlans(data.tuitionPlans);
-            }
-            if (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0) {
-              setPaymentMethods(data.paymentMethods);
-            }
-            if (Array.isArray(data.reminders)) {
-              setReminders(data.reminders);
-            }
-            if (Array.isArray(data.importBatches)) {
-              setImportBatches(data.importBatches);
-            }
-            if (Array.isArray(data.auditLogs)) {
-              setAuditLogs(data.auditLogs);
-            }
-            if (Array.isArray(data.notifications)) {
+          }
+
+          // 2. Direct Browser Supabase client query fallback
+          const sbSchool = await fetchSchool(targetSchoolId);
+          if (sbSchool) {
+            setSchool(sbSchool);
+            const sbYear = await fetchAcademicYear(sbSchool.id);
+            if (sbYear) {
+              setAcademicYear(sbYear);
+              const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods, sbBatches, sbNotifications, sbSub] =
+                await Promise.all([
+                  fetchAcademicYearsList(sbSchool.id),
+                  fetchClasses(sbSchool.id, sbYear.id),
+                  fetchStudents(sbSchool.id, sbYear.id),
+                  fetchPayments(sbSchool.id, sbYear.id),
+                  fetchTuitionPlans(sbSchool.id, sbYear.id),
+                  fetchReminders(sbSchool.id),
+                  fetchPaymentMethodsDb(sbSchool.id),
+                  fetchImportBatchesDb(sbSchool.id),
+                  fetchNotificationsDb(sbSchool.id),
+                  fetchSubscriptionDb(sbSchool.id),
+                ]);
+
+              if (sbYearsList.length > 0) setAcademicYearsList(sbYearsList);
+              if (sbClasses.length > 0) setClasses(sbClasses);
+              setStudents(sbStudents);
+              setPayments(sbPayments);
+              setTuitionPlans(sbPlans);
+              if (sbMethods.length > 0) setPaymentMethods(sbMethods);
+              setReminders(sbReminders);
+              setImportBatches(sbBatches);
+
               let localReadIds: string[] = [];
-              if (typeof window !== "undefined" && data.school?.id) {
+              if (typeof window !== "undefined" && sbSchool.id) {
                 try {
-                  const stored = localStorage.getItem(`scoly_read_notifs_${data.school.id}`);
+                  const stored = localStorage.getItem(`scoly_read_notifs_${sbSchool.id}`);
                   if (stored) localReadIds = JSON.parse(stored);
                 } catch {}
               }
               const localReadSet = new Set(localReadIds);
-              const mergedNotifs = data.notifications.map((n: any) => ({
+              const mergedSbNotifs = sbNotifications.map((n: any) => ({
                 ...n,
                 is_read: n.is_read || localReadSet.has(n.id) || (n.dedup_key && localReadSet.has(n.dedup_key)),
               }));
-              setNotifications(mergedNotifs);
-            }
-            if (data.subscription) {
-              setSubscription(data.subscription);
-            } else if (data.school?.id) {
-              setSubscription(getDefaultTrialSubscription(data.school.id, data.school?.created_at));
-            }
-            if (data.userRole) {
-              setCurrentUser((prev) => (prev ? { ...prev, role: data.userRole } : null));
-            }
+              setNotifications(mergedSbNotifs);
 
-            setSyncStatus("synced");
-            setSyncErrorMessage(undefined);
-            isSyncingRef.current = false;
-            setIsLoaded(true);
-            return true;
-          }
-        }
+              if (sbSub) {
+                setSubscription(sbSub);
+              } else {
+                setSubscription(getDefaultTrialSubscription(sbSchool.id, sbSchool.created_at));
+              }
 
-        // 2. Direct Browser Supabase client query
-        const sbSchool = await fetchSchool(targetSchoolId);
-        if (sbSchool) {
-          setSchool(sbSchool);
-          const sbYear = await fetchAcademicYear(sbSchool.id);
-          if (sbYear) {
-            setAcademicYear(sbYear);
-            const [sbYearsList, sbClasses, sbStudents, sbPayments, sbPlans, sbReminders, sbMethods, sbBatches, sbNotifications, sbSub] =
-              await Promise.all([
-                fetchAcademicYearsList(sbSchool.id),
-                fetchClasses(sbSchool.id, sbYear.id),
-                fetchStudents(sbSchool.id, sbYear.id),
-                fetchPayments(sbSchool.id, sbYear.id),
-                fetchTuitionPlans(sbSchool.id, sbYear.id),
-                fetchReminders(sbSchool.id),
-                fetchPaymentMethodsDb(sbSchool.id),
-                fetchImportBatchesDb(sbSchool.id),
-                fetchNotificationsDb(sbSchool.id),
-                fetchSubscriptionDb(sbSchool.id),
-              ]);
-
-            if (sbYearsList.length > 0) setAcademicYearsList(sbYearsList);
-            if (sbClasses.length > 0) setClasses(sbClasses);
-            setStudents(sbStudents);
-            setPayments(sbPayments);
-            setTuitionPlans(sbPlans);
-            if (sbMethods.length > 0) setPaymentMethods(sbMethods);
-            setReminders(sbReminders);
-            setImportBatches(sbBatches);
-
-            let localReadIds: string[] = [];
-            if (typeof window !== "undefined" && sbSchool.id) {
-              try {
-                const stored = localStorage.getItem(`scoly_read_notifs_${sbSchool.id}`);
-                if (stored) localReadIds = JSON.parse(stored);
-              } catch {}
-            }
-            const localReadSet = new Set(localReadIds);
-            const mergedSbNotifs = sbNotifications.map((n: any) => ({
-              ...n,
-              is_read: n.is_read || localReadSet.has(n.id) || (n.dedup_key && localReadSet.has(n.dedup_key)),
-            }));
-            setNotifications(mergedSbNotifs);
-
-            if (sbSub) {
-              setSubscription(sbSub);
-            } else {
-              setSubscription(getDefaultTrialSubscription(sbSchool.id, sbSchool.created_at));
+              setSyncStatus("synced");
+              setSyncErrorMessage(undefined);
+              setIsLoaded(true);
+              return { success: true, school: sbSchool, studentsCount: sbStudents.length };
             }
           }
+
           setSyncStatus("synced");
-          setSyncErrorMessage(undefined);
-
-          isSyncingRef.current = false;
           setIsLoaded(true);
-          return true;
+          return { success: false };
+        } catch (err: any) {
+          console.warn("[SCOLY] Supabase PostgreSQL sync error:", err);
+          setSyncStatus("error");
+          setSyncErrorMessage(err?.message || "Erreur de synchronisation Supabase");
+          setIsLoaded(true);
+          return { success: false };
+        } finally {
+          syncPromiseRef.current = null;
         }
+      };
 
-
-        setSyncStatus("synced");
-        isSyncingRef.current = false;
-        setIsLoaded(true);
-        return true;
-      } catch (err: any) {
-        console.warn("[SCOLY] Supabase PostgreSQL sync error:", err);
-        setSyncStatus("error");
-        setSyncErrorMessage(err?.message || "Erreur de synchronisation Supabase");
-        isSyncingRef.current = false;
-        setIsLoaded(true);
-        return false;
-      }
+      const p = executeFetch();
+      syncPromiseRef.current = p;
+      return p;
     },
     []
   );
@@ -551,7 +558,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   // ─── 3. AUTHENTICATION & REGISTRATION HANDLERS ────────────────────────────
   const loginUser = useCallback(
-    async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    async (email: string, pass: string): Promise<{ success: boolean; error?: string; school?: School }> => {
       const client = getSupabaseBrowser();
       if (!client) {
         return { success: false, error: "Client Supabase non initialisé." };
@@ -585,9 +592,14 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             phone: data.user.user_metadata?.phone,
           };
           setCurrentUser(u);
-          // Restore complete cloud data from Supabase for this user immediately
-          await fetchAllFromSupabase(undefined, data.user.id, data.user.email || cleanEmail).catch(() => {});
-          return { success: true };
+
+          // Force a fresh direct fetch from Supabase for this logged-in user and wait for it
+          syncPromiseRef.current = null;
+          const syncRes = await fetchAllFromSupabase(undefined, data.user.id, data.user.email || cleanEmail);
+          return {
+            success: true,
+            school: syncRes?.school,
+          };
         }
         return { success: false, error: "Connexion échouée." };
       } catch (err: any) {
@@ -862,6 +874,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     if (client) {
       await client.auth.signOut().catch(() => {});
     }
+    syncPromiseRef.current = null;
     setCurrentUser(null);
     setSchool(INITIAL_SCHOOL);
     setClasses(INITIAL_CLASSES);
@@ -871,11 +884,14 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
     setReminders([]);
     setImportBatches([]);
     setNotifications([]);
-    await fetchAllFromSupabase();
-  }, [fetchAllFromSupabase]);
+    setIsLoaded(true);
+    setSyncStatus("synced");
+  }, []);
 
-  const refreshFromSupabase = useCallback(async () => {
-    return await fetchAllFromSupabase(school.id, currentUser?.id, currentUser?.email);
+  const refreshFromSupabase = useCallback(async (): Promise<boolean> => {
+    syncPromiseRef.current = null;
+    const res = await fetchAllFromSupabase(school.id, currentUser?.id, currentUser?.email);
+    return res.success;
   }, [fetchAllFromSupabase, school.id, currentUser]);
 
   const syncLocalToSupabase = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
