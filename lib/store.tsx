@@ -674,8 +674,42 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
         const apiData = await apiRes.json().catch(() => ({}));
 
-        // Strict verification: If the server API failed, STOP immediately and return the exact error
+        // Strict verification: If the server API failed, try client fallback if service role key is missing on host
         if (!apiRes.ok || !apiData.success) {
+          if (client && (apiData?.error?.includes("SUPABASE_SERVICE_ROLE_KEY") || apiRes.status === 500)) {
+            const clientSignUp = await client.auth.signUp({
+              email: cleanEmail,
+              password: pass,
+              options: {
+                data: {
+                  full_name: fullName,
+                  first_name: firstName,
+                  last_name: lastName,
+                  phone: phone || null,
+                  school_name: schoolName || `Établissement de ${firstName}`,
+                },
+              },
+            });
+
+            if (clientSignUp.error) {
+              return { success: false, error: clientSignUp.error.message };
+            }
+
+            if (clientSignUp.data?.user) {
+              const u: AuthUser = {
+                id: clientSignUp.data.user.id,
+                email: cleanEmail,
+                full_name: fullName,
+                first_name: firstName,
+                last_name: lastName,
+                phone: phone,
+              };
+              setCurrentUser(u);
+              await fetchAllFromSupabase(undefined, clientSignUp.data.user.id, cleanEmail).catch(() => {});
+              return { success: true };
+            }
+          }
+
           return {
             success: false,
             error: apiData?.error || "La création du compte a échoué sur le serveur.",
