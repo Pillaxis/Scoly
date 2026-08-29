@@ -83,7 +83,7 @@ export default function RegisterPage() {
 
     try {
       const res = await registerUser({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
         firstName: firstName.trim(),
         lastName: lastName.trim(),

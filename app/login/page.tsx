@@ -44,7 +44,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await loginUser(email, password);
+      const res = await loginUser(email.trim().toLowerCase(), password);
       if (res.success) {
         setSuccessMsg("Connexion réussie ! Redirection en cours...");
         setTimeout(() => {

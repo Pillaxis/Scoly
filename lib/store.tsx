@@ -565,15 +565,20 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: "Client Supabase non initialisé." };
       }
 
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail || !pass) {
+        return { success: false, error: "Veuillez saisir votre email et votre mot de passe." };
+      }
+
       try {
         const { data, error } = await client.auth.signInWithPassword({
-          email: email.trim(),
+          email: cleanEmail,
           password: pass,
         });
 
         if (error) {
           if (error.message.includes("Invalid login credentials")) {
-            return { success: false, error: "Adresse email ou mot de passe incorrect." };
+            return { success: false, error: "Adresse e-mail ou mot de passe incorrect." };
           }
           return { success: false, error: error.message };
         }
@@ -581,7 +586,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         if (data.user) {
           const u: AuthUser = {
             id: data.user.id,
-            email: data.user.email || email,
+            email: data.user.email || cleanEmail,
             full_name: data.user.user_metadata?.full_name,
             first_name: data.user.user_metadata?.first_name,
             last_name: data.user.user_metadata?.last_name,
@@ -589,7 +594,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
           };
           setCurrentUser(u);
           // Restore complete cloud data from Supabase for this user immediately
-          await fetchAllFromSupabase(undefined, data.user.id, data.user.email || email).catch(() => {});
+          await fetchAllFromSupabase(undefined, data.user.id, data.user.email || cleanEmail).catch(() => {});
           return { success: true };
         }
         return { success: false, error: "Connexion échouée." };
@@ -617,7 +622,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       schoolNameParam?: string,
       fullNameParam?: string
     ): Promise<{ success: boolean; error?: string }> => {
-      let email = "";
+      let rawEmail = "";
       let pass = "";
       let firstName = "";
       let lastName = "";
@@ -625,14 +630,14 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       let schoolName = "";
 
       if (typeof emailOrParams === "object") {
-        email = emailOrParams.email;
+        rawEmail = emailOrParams.email;
         pass = emailOrParams.pass || emailOrParams.password || "";
         firstName = emailOrParams.firstName;
         lastName = emailOrParams.lastName;
         phone = emailOrParams.phone || "";
         schoolName = emailOrParams.schoolName || `Établissement de ${firstName}`;
       } else {
-        email = emailOrParams;
+        rawEmail = emailOrParams;
         pass = passParam || "";
         schoolName = schoolNameParam || "Mon Établissement Scolaire";
         const parts = (fullNameParam || "").split(" ");
@@ -640,16 +645,24 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
         lastName = parts.slice(1).join(" ") || "";
       }
 
-      const fullName = `${firstName} ${lastName}`.trim() || email.split("@")[0];
+      const cleanEmail = rawEmail.trim().toLowerCase();
+      if (!cleanEmail) {
+        return { success: false, error: "Adresse email requise." };
+      }
+      if (!pass || pass.length < 6) {
+        return { success: false, error: "Le mot de passe doit comporter au moins 6 caractères." };
+      }
+
+      const fullName = `${firstName} ${lastName}`.trim() || cleanEmail.split("@")[0];
       const client = getSupabaseBrowser();
 
       try {
-        // 1. Create auto-confirmed user directly via server API in PostgreSQL
+        // 1. Create real auto-confirmed user directly via server API in Supabase Auth
         const apiRes = await fetch("/api/auth/register-school", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: email.trim(),
+            email: cleanEmail,
             password: pass,
             full_name: fullName,
             first_name: firstName,
@@ -661,32 +674,41 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
         const apiData = await apiRes.json().catch(() => ({}));
 
-        if (!apiRes.ok && apiData.error && apiData.error.includes("déjà")) {
-          return { success: false, error: apiData.error };
+        // Strict verification: If the server API failed, STOP immediately and return the exact error
+        if (!apiRes.ok || !apiData.success) {
+          return {
+            success: false,
+            error: apiData?.error || "La création du compte a échoué sur le serveur.",
+          };
         }
 
-        // 2. Client instant sign-in
-        if (client) {
-          const signInRes = await client.auth.signInWithPassword({
-            email: email.trim(),
-            password: pass,
-          });
-
-          if (signInRes.data?.user) {
-            const u: AuthUser = {
-              id: signInRes.data.user.id,
-              email: signInRes.data.user.email || email,
-              full_name: fullName,
-              first_name: firstName,
-              last_name: lastName,
-              phone: phone,
-            };
-            setCurrentUser(u);
-            await fetchAllFromSupabase(apiData.school_id, signInRes.data.user.id, email).catch(() => {});
-            return { success: true };
-          }
+        // 2. Client instant sign-in using the verified credentials
+        if (!client) {
+          return { success: false, error: "Client Supabase non initialisé." };
         }
 
+        const signInRes = await client.auth.signInWithPassword({
+          email: cleanEmail,
+          password: pass,
+        });
+
+        if (signInRes.error || !signInRes.data?.user) {
+          return {
+            success: false,
+            error: signInRes.error?.message || "Compte créé avec succès, mais la connexion automatique a échoué. Veuillez vous connecter.",
+          };
+        }
+
+        const u: AuthUser = {
+          id: signInRes.data.user.id,
+          email: signInRes.data.user.email || cleanEmail,
+          full_name: fullName,
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone,
+        };
+        setCurrentUser(u);
+        await fetchAllFromSupabase(apiData.school_id, signInRes.data.user.id, cleanEmail).catch(() => {});
         return { success: true };
       } catch (err: any) {
         return { success: false, error: err?.message || "Erreur lors de la création du compte." };
@@ -697,10 +719,13 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
     const client = getSupabaseBrowser();
-    if (!client) return { success: true };
+    if (!client) return { success: false, error: "Client Supabase non initialisé." };
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return { success: false, error: "Veuillez saisir votre adresse e-mail." };
 
     try {
-      const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+      const { error } = await client.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
       });
 

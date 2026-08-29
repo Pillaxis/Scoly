@@ -4,7 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 export async function POST(req: NextRequest) {
   const supabase = getSupabaseServer();
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase non configuré" }, { status: 500 });
+    return NextResponse.json({ error: "Supabase non configuré sur le serveur (SUPABASE_SERVICE_ROLE_KEY manquante)." }, { status: 500 });
   }
 
   try {
@@ -19,68 +19,70 @@ export async function POST(req: NextRequest) {
       phone,
     } = body;
 
-    let user_id = body.user_id;
+    const cleanEmail = (email || "").trim().toLowerCase();
 
-    if (!email) {
-      return NextResponse.json({ error: "Email requis" }, { status: 400 });
+    if (!cleanEmail) {
+      return NextResponse.json({ error: "L'adresse email est requise." }, { status: 400 });
     }
 
-    const resolvedFirstName = first_name || full_name?.split(" ")[0] || email.split("@")[0];
-    const resolvedLastName = last_name || (full_name?.split(" ").slice(1).join(" ") || "");
-    const resolvedFullName = full_name || `${resolvedFirstName} ${resolvedLastName}`.trim();
+    if (!password || password.length < 6) {
+      return NextResponse.json({ error: "Le mot de passe doit comporter au moins 6 caractères." }, { status: 400 });
+    }
+
+    const resolvedFirstName = first_name?.trim() || full_name?.split(" ")[0]?.trim() || cleanEmail.split("@")[0];
+    const resolvedLastName = last_name?.trim() || (full_name?.split(" ").slice(1).join(" ")?.trim() || "");
+    const resolvedFullName = full_name?.trim() || `${resolvedFirstName} ${resolvedLastName}`.trim();
     const finalSchoolName = school_name?.trim() || `Établissement de ${resolvedFirstName}`;
 
-    // 1. If password provided and no user_id, create user with email_confirm = true directly
-    // This completely bypasses the email verification step and rate limits!
-    if (password && !user_id) {
-      try {
-        const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
-          email: email.trim(),
-          password: password,
-          email_confirm: true,
-          user_metadata: {
-            full_name: resolvedFullName,
-            first_name: resolvedFirstName,
-            last_name: resolvedLastName,
-            phone: phone || null,
-            school_name: finalSchoolName,
-          },
-        });
+    // 1. Création de l'utilisateur réel dans Supabase Auth avec confirmation automatique
+    let user_id: string;
 
-        if (newUser?.user) {
-          user_id = newUser.user.id;
-        } else if (createErr) {
-          if (
-            createErr.message.includes("User already registered") ||
-            (createErr as any).code === "user_already_exists"
-          ) {
-            // User already exists: update email_confirm to true so they can login without confirmation
-            const { data: existingUsers } = await supabase.auth.admin.listUsers();
-            const found = existingUsers?.users?.find((u) => u.email?.toLowerCase() === email.trim().toLowerCase());
-            if (found) {
-              user_id = found.id;
-              await supabase.auth.admin.updateUserById(found.id, {
-                email_confirm: true,
-                password: password,
-              }).catch(() => {});
-            } else {
-              return NextResponse.json({ error: "Un compte avec cette adresse email existe déjà. Veuillez vous connecter." }, { status: 409 });
-            }
-          } else {
-            console.warn("admin.createUser warning:", createErr.message);
-          }
-        }
-      } catch (adminErr: any) {
-        console.warn("admin.createUser exception:", adminErr?.message);
+    const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
+      email: cleanEmail,
+      password: password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: resolvedFullName,
+        first_name: resolvedFirstName,
+        last_name: resolvedLastName,
+        phone: phone ? phone.trim() : null,
+        school_name: finalSchoolName,
+      },
+    });
+
+    if (createErr) {
+      const msg = (createErr.message || "").toLowerCase();
+      if (
+        msg.includes("already registered") ||
+        msg.includes("already been registered") ||
+        msg.includes("already exists") ||
+        msg.includes("user_already_exists") ||
+        (createErr as any).code === "user_already_exists"
+      ) {
+        return NextResponse.json(
+          { error: "Un compte avec cette adresse email existe déjà. Veuillez vous connecter." },
+          { status: 409 }
+        );
       }
+      return NextResponse.json(
+        { error: `Erreur lors de la création du compte : ${createErr.message}` },
+        { status: 400 }
+      );
     }
 
-    // Fallback user ID if admin create was bypassed
-    if (!user_id) {
-      user_id = "user-" + crypto.randomUUID();
+    if (!newUser?.user?.id) {
+      return NextResponse.json(
+        { error: "La création de l'utilisateur dans Supabase Auth a échoué." },
+        { status: 500 }
+      );
     }
 
-    // 2. Check if user is already linked to a school (non-blocking)
+    user_id = newUser.user.id;
+
+    // 2. Vérification de l'établissement créé (le trigger PostgreSQL handle_new_user peut l'avoir déjà créé)
+    let schoolId: string | null = null;
+    let yearId: string | null = null;
+
     try {
       const { data: existingMember } = await supabase
         .from("school_members")
@@ -91,29 +93,30 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (existingMember?.school_id) {
-        return NextResponse.json({ success: true, user_id, school_id: existingMember.school_id });
+        schoolId = existingMember.school_id;
       }
     } catch {
-      // Table may not exist yet in fresh project
+      // Ignorer si la table n'a pas encore répondu
     }
 
-    const schoolId = crypto.randomUUID();
-    const yearId = crypto.randomUUID();
-    const code = "ECOLE-" + schoolId.slice(0, 6).toUpperCase();
-    const slug = finalSchoolName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + schoolId.slice(0, 4);
+    // 3. Si non créé automatiquement par le trigger, créer l'établissement de façon idempotente
+    if (!schoolId) {
+      schoolId = crypto.randomUUID();
+      yearId = crypto.randomUUID();
+      const code = "ECOLE-" + schoolId.slice(0, 6).toUpperCase();
+      const slug = finalSchoolName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + schoolId.slice(0, 4);
 
-    // 3. Create School in DB (non-blocking if table not ready)
-    try {
+      // Création de l'école
       await supabase.from("schools").insert({
         id: schoolId,
         name: finalSchoolName,
         code,
         slug,
-        phone: phone ? phone.trim() : "",
-        email: email.trim(),
-        address: "",
-        city: "",
-        country: "",
+        phone: phone ? phone.trim() : "+228 90 00 00 00",
+        email: cleanEmail,
+        address: "Quartier Administratif",
+        city: "Lomé",
+        country: "Togo",
         currency: "FCFA",
         receipt_prefix: "REC-25-",
         receipt_counter: 0,
@@ -128,59 +131,63 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Link User in school_members
+      // Liaison du directeur
       await supabase.from("school_members").insert({
         school_id: schoolId,
-        user_id,
+        user_id: user_id,
         role: "director",
         first_name: resolvedFirstName,
         last_name: resolvedLastName,
-        phone: phone || null,
+        phone: phone ? phone.trim() : null,
         is_active: true,
       });
 
-      // Create Academic Year (Initial Blank State)
+      // Création de l'année scolaire
       await supabase.from("academic_years").insert({
         id: yearId,
         school_id: schoolId,
-        name: "",
-        start_date: null,
-        end_date: null,
+        name: "2025-2026",
+        start_date: "2025-09-15",
+        end_date: "2026-06-30",
         is_current: true,
       });
-
-      // Initialize 15-day Free Trial Subscription
-      const now = new Date();
-      const trialEnd = new Date(now);
-      trialEnd.setDate(trialEnd.getDate() + 15);
-
-      await supabase.from("subscriptions").insert({
-        school_id: schoolId,
-        plan: "start",
-        billing_period: "monthly",
-        status: "trialing",
-        price_amount: 0,
-        currency: "FCFA",
-        trial_start_at: now.toISOString(),
-        trial_end_at: trialEnd.toISOString(),
-        subscription_start_at: null,
-        subscription_end_at: null,
-        refund_eligible_until: null,
-      });
-    } catch (dbErr) {
-      console.warn("DB provisioning warning (will operate smoothly with local cache):", dbErr);
     }
 
+    // 4. Garantir que l'abonnement Essai 30 jours existe pour cette école
+    if (schoolId) {
+      const now = new Date();
+      const trialEnd = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+
+      const { data: existingSub } = await supabase
+        .from("subscriptions")
+        .select("id")
+        .eq("school_id", schoolId)
+        .limit(1)
+        .single();
+
+      if (!existingSub) {
+        await supabase.from("subscriptions").insert({
+          school_id: schoolId,
+          plan: "start",
+          billing_period: "monthly",
+          status: "trialing",
+          price_amount: 0,
+          currency: "FCFA",
+          trial_start_at: now.toISOString(),
+          trial_end_at: trialEnd.toISOString(),
+        });
+      }
+    }
 
     return NextResponse.json({
       success: true,
       user_id,
-      email: email.trim(),
+      email: cleanEmail,
       school_id: schoolId,
       academic_year_id: yearId,
     });
   } catch (err: any) {
     console.error("Register school exception:", err);
-    return NextResponse.json({ error: err?.message || "Erreur serveur" }, { status: 500 });
+    return NextResponse.json({ error: err?.message || "Erreur interne du serveur lors de l'inscription." }, { status: 500 });
   }
 }
