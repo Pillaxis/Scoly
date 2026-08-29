@@ -810,7 +810,7 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
       const finalSchool: School = {
         ...(setupData?.school || school),
         onboarding_completed: true,
-        onboarding_current_step: 9,
+        onboarding_current_step: 3,
       };
       setSchool(finalSchool);
 

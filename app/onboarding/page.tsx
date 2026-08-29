@@ -2,63 +2,61 @@
 
 import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
-  CheckCircle2,
   Sparkles,
   School as SchoolIcon,
   LogOut,
+  FileSpreadsheet,
+  Calculator,
+  CreditCard,
+  Check,
 } from "lucide-react";
 import { useScoly } from "@/lib/store";
 import {
-  Step1SchoolInfo,
-  Step2EducationType,
-  Step3AcademicYear,
-  Step4Classes,
-  Step5TuitionPlans,
-  Step6Users,
-  Step7Notifications,
-  Step8ImportData,
-  Step9FinishSummary,
+  Step1ImportStudents,
+  Step2SetupTuition,
+  Step3ReadyPayments,
 } from "@/components/onboarding/OnboardingSteps";
-import { StaffRole, School, AcademicYear } from "@/types/scoly";
+import { Payment } from "@/types/scoly";
+
+const PaymentModal = dynamic(
+  () => import("@/components/payments/PaymentModal").then((m) => ({ default: m.PaymentModal })),
+  { ssr: false }
+);
+const ReceiptModal = dynamic(
+  () => import("@/components/payments/ReceiptModal").then((m) => ({ default: m.ReceiptModal })),
+  { ssr: false }
+);
 
 export default function OnboardingPage() {
   const router = useRouter();
   const {
-    school: storeSchool,
-    academicYear: storeAcademicYear,
-    classes: storeClasses,
-    tuitionPlans: storeTuitionPlans,
+    school,
     students,
+    classes,
+    tuitionPlans,
     currentUser,
     isLoaded,
     saveOnboardingStep,
     completeOnboarding,
-    updateSchool,
-    updateAcademicYear,
-    updateClasses,
-    updateTuitionPlans,
-    inviteStaffMember,
     logoutUser,
   } = useScoly();
 
   const [currentStep, setCurrentStep] = useState<number>(1);
-  const [isMathValidInStep5, setIsMathValidInStep5] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [, startTransition] = useTransition();
 
-  // Local editable state initialized from store
-  const [localSchool, setLocalSchool] = useState(storeSchool);
-  const [localAcademicYear, setLocalAcademicYear] = useState(storeAcademicYear);
-  const [localClasses, setLocalClasses] = useState(storeClasses);
-  const [localTuitionPlans, setLocalTuitionPlans] = useState(storeTuitionPlans);
-  const [invitedUsers, setInvitedUsers] = useState<{ name: string; email: string; role: StaffRole }[]>([]);
+  // Payment modal state for Step 3 instant payment
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [lastPayment, setLastPayment] = useState<Payment | null>(null);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+
   const isInitializedRef = React.useRef(false);
 
-  // Sync state once store is loaded
+  // Sync and smart resume based on existing data
   useEffect(() => {
     if (isLoaded && !isInitializedRef.current) {
       if (!currentUser) {
@@ -66,174 +64,58 @@ export default function OnboardingPage() {
         return;
       }
 
-      if (storeSchool.onboarding_completed) {
+      if (school.onboarding_completed) {
         router.push("/dashboard");
         return;
       }
 
       isInitializedRef.current = true;
 
-
-      const cleanSchool: School = {
-        ...storeSchool,
-        name:
-          storeSchool.name === "Mon Établissement Scolaire" || storeSchool.name === "Complexe Scolaire Lumière d'Afrique"
-            ? ""
-            : (storeSchool.name || ""),
-        phone:
-          !storeSchool.phone ||
-          storeSchool.phone === "+228 90 00 00 00" ||
-          storeSchool.phone.startsWith("+228 90 00") ||
-          storeSchool.phone === "+228 90 12 34 56"
-            ? ""
-            : storeSchool.phone,
-        address:
-          storeSchool.address === "Quartier Administratif" ||
-          storeSchool.address === "Boulevard du 13 Janvier, Quartier Administratif" ||
-          storeSchool.address === "Rue des Écoles, Quartier Administratif"
-            ? ""
-            : (storeSchool.address || ""),
-        city: storeSchool.city === "Lomé" ? "" : (storeSchool.city || ""),
-        country: storeSchool.country === "Togo" ? "" : (storeSchool.country || ""),
-      };
-      setLocalSchool(cleanSchool);
-
-      const cleanYear: AcademicYear = {
-        ...storeAcademicYear,
-        name:
-          storeAcademicYear.name === "2025-2026" ||
-          storeAcademicYear.name === "2026-2027" ||
-          storeAcademicYear.name === "Année Scolaire 2025-2026"
-            ? ""
-            : (storeAcademicYear.name || ""),
-        start_date:
-          storeAcademicYear.start_date === "2025-09-15" ||
-          storeAcademicYear.start_date === "2026-09-15" ||
-          storeAcademicYear.start_date === "2025-09-01"
-            ? ""
-            : (storeAcademicYear.start_date || ""),
-        end_date:
-          storeAcademicYear.end_date === "2026-06-30" ||
-          storeAcademicYear.end_date === "2027-06-30" ||
-          storeAcademicYear.end_date === "2027-07-31" ||
-          storeAcademicYear.end_date === "2026-07-31"
-            ? ""
-            : (storeAcademicYear.end_date || ""),
-      };
-      setLocalAcademicYear(cleanYear);
-
-      const isSeedClasses =
-        storeClasses.length > 0 &&
-        (storeClasses.some((c) => c.name === "CI" || c.name === "6ème A" || c.name === "2nde CD") ||
-          storeClasses.length === 13);
-      setLocalClasses(isSeedClasses && !storeSchool.onboarding_completed ? [] : storeClasses);
-      setLocalTuitionPlans(storeTuitionPlans);
-
-      // Resume from saved step if valid
-      if (storeSchool.onboarding_current_step && storeSchool.onboarding_current_step >= 1 && storeSchool.onboarding_current_step <= 9) {
-        setCurrentStep(storeSchool.onboarding_current_step);
+      // Smart resume logic:
+      // If user already has students & tuition plans configured -> Step 3
+      // Else if user already has students -> Step 2
+      // Else -> Step 1 (or stored step)
+      if (students.length > 0 && tuitionPlans.some((tp) => tp.total_amount > 0)) {
+        setCurrentStep(3);
+      } else if (students.length > 0) {
+        setCurrentStep(2);
+      } else if (school.onboarding_current_step && school.onboarding_current_step >= 1 && school.onboarding_current_step <= 3) {
+        setCurrentStep(school.onboarding_current_step);
+      } else {
+        setCurrentStep(1);
       }
     }
-  }, [isLoaded, currentUser, storeSchool, storeAcademicYear, storeClasses, storeTuitionPlans, router]);
+  }, [isLoaded, currentUser, school, students.length, tuitionPlans, router]);
 
-  const totalSteps = 9;
+  const totalSteps = 3;
 
-  // Step titles & meta
   const stepsMeta = [
-    { number: 1, title: "Établissement", optional: false },
-    { number: 2, title: "Type d'école", optional: true },
-    { number: 3, title: "Année scolaire", optional: false },
-    { number: 4, title: "Classes", optional: true },
-    { number: 5, title: "Scolarité", optional: true },
-    { number: 6, title: "Équipe", optional: true },
-    { number: 7, title: "Notifications", optional: true },
-    { number: 8, title: "Données", optional: true },
-    { number: 9, title: "Finalisation", optional: false },
+    { number: 1, title: "Importer les élèves", icon: FileSpreadsheet },
+    { number: 2, title: "Configurer les tarifs", icon: Calculator },
+    { number: 3, title: "Enregistrer les paiements", icon: CreditCard },
   ];
 
   const currentMeta = stepsMeta[currentStep - 1] || stepsMeta[0];
 
-  // Validation before going to next step
-  const canContinue = (): boolean => {
-    if (currentStep === 1) {
-      return Boolean(localSchool.name && localSchool.name.trim().length > 0);
-    }
-    if (currentStep === 3) {
-      return Boolean(localAcademicYear.name && localAcademicYear.name.trim().length > 0);
-    }
-    if (currentStep === 5) {
-      return isMathValidInStep5;
-    }
-    return true;
+  const handleStepChange = async (newStep: number) => {
+    setCurrentStep(newStep);
+    await saveOnboardingStep(newStep, school);
   };
 
-  const handleNext = async () => {
-    if (!canContinue()) return;
-
+  const handleFinish = async () => {
     setIsSubmitting(true);
     try {
-      // 1. Update main store state immediately
-      updateSchool(localSchool);
-      updateAcademicYear(localAcademicYear);
-      updateClasses(localClasses);
-      updateTuitionPlans(localTuitionPlans);
-
-      if (currentStep === 6 && invitedUsers.length > 0) {
-        invitedUsers.forEach((u) => {
-          inviteStaffMember({
-            full_name: u.name,
-            email: u.email,
-            phone: "",
-            role: u.role,
-            permissions: {
-              can_collect_payments: true,
-              can_manage_students: true,
-              can_manage_tuition: u.role === "directeur",
-              can_send_reminders: true,
-              can_view_financial_stats: u.role !== "secretaire",
-              can_manage_settings: u.role === "directeur",
-            },
-          });
-        });
-      }
-
-      if (currentStep < totalSteps) {
-        const nextStep = currentStep + 1;
-        setCurrentStep(nextStep);
-        // Autosave progress
-        await saveOnboardingStep(nextStep, localSchool);
-      } else {
-        // Step 9: Finalize onboarding with exact customized configuration
-        await completeOnboarding({
-          school: localSchool,
-          academicYear: localAcademicYear,
-          classes: localClasses,
-          tuitionPlans: localTuitionPlans,
-        });
-        startTransition(() => {
-          router.push("/dashboard?welcome=true");
-        });
-
-      }
+      await completeOnboarding();
+      startTransition(() => {
+        router.push("/dashboard?welcome=true");
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleSkip = async () => {
-    if (currentStep < totalSteps) {
-      const nextStep = currentStep + 1;
-      setCurrentStep(nextStep);
-      await saveOnboardingStep(nextStep, localSchool);
-    }
-  };
-
-  const handlePrev = () => {
-    if (currentStep > 1) {
-      const prevStep = currentStep - 1;
-      setCurrentStep(prevStep);
-      saveOnboardingStep(prevStep, localSchool);
-    }
+  const handleOpenPayment = () => {
+    setIsPaymentModalOpen(true);
   };
 
   if (!isLoaded || !currentUser) {
@@ -248,26 +130,27 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between font-sans text-slate-900">
-      
+    <div className="min-h-screen bg-slate-50/70 flex flex-col justify-between font-sans text-slate-900">
       {/* ── Top Header ────────────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
+      <header className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-black text-sm shadow-xs">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-blue-500/20">
             S
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <span className="font-extrabold text-sm text-slate-900 tracking-tight">SCOLY</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-50 text-blue-600 border border-blue-200 uppercase">
-                Assistant
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Démarrage rapide
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">Configuration de votre établissement</p>
+            <p className="text-[11px] text-slate-400 font-medium">
+              {school.name || "Mon Établissement Scolaire"}
+            </p>
           </div>
         </div>
 
-        {/* User Info & Logout option */}
+        {/* Right Info & Logout */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-500 hidden sm:inline">
             Connecté en tant que <strong className="text-slate-800 font-bold">{currentUser.email}</strong>
@@ -278,170 +161,163 @@ export default function OnboardingPage() {
               await logoutUser();
               router.push("/login");
             }}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer border border-transparent hover:border-rose-200"
             title="Se déconnecter et reprendre plus tard"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Quitter</span>
+            <span className="hidden sm:inline font-semibold">Quitter</span>
           </button>
         </div>
       </header>
 
       {/* ── Main Container ────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-3xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-center">
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xl flex flex-col relative">
-          
-          {/* Wizard Progress Bar (Pinned / Sticky on scroll) */}
-          <div className="sticky top-16 z-20 rounded-t-3xl p-5 sm:p-7 bg-slate-900 text-white space-y-3.5 shadow-lg border-b border-slate-800 backdrop-blur-md">
+      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-center">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xl flex flex-col overflow-hidden">
+          {/* ── Stepper Header (3 Steps) ─────────────────────────────────── */}
+          <div className="bg-slate-900 text-white p-5 sm:p-7 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-widest text-blue-400 block mb-1">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400 block mb-1">
                   Étape {currentStep} sur {totalSteps} • {currentMeta.title}
                 </span>
-                <h1 className="text-base sm:text-lg font-black tracking-tight text-white">
-                  Configuration de votre établissement
+                <h1 className="text-base sm:text-xl font-black tracking-tight text-white">
+                  {currentStep === 1 && "Importez vos données d'élèves"}
+                  {currentStep === 2 && "Définissez la scolarité par classe"}
+                  {currentStep === 3 && "Votre école est prête à encaisser"}
                 </h1>
               </div>
               <div className="text-right">
-                <span className="text-xs font-extrabold text-slate-300">
+                <span className="text-sm font-black text-blue-400">
                   {Math.round((currentStep / totalSteps) * 100)}%
                 </span>
               </div>
             </div>
 
-            {/* Stepper Progress Bar Visual */}
+            {/* Stepper Progress Bar */}
             <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
               <div
-                className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full transition-all duration-300 ease-out"
+                className="bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500 h-full rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${(currentStep / totalSteps) * 100}%` }}
               />
             </div>
 
-            {/* Step Pills on Desktop */}
-            <div className="hidden sm:flex items-center justify-between text-[10px] font-semibold text-slate-400 pt-1 overflow-x-auto">
+            {/* 3 Step Pills */}
+            <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
               {stepsMeta.map((s) => {
                 const isDone = currentStep > s.number;
                 const isCurrent = currentStep === s.number;
+                const Icon = s.icon;
                 return (
-                  <span
+                  <button
                     key={s.number}
-                    className={`transition-colors whitespace-nowrap px-1 ${
+                    type="button"
+                    onClick={() => {
+                      // Allow jumping to previous completed steps
+                      if (s.number < currentStep || (s.number === 2 && students.length > 0)) {
+                        handleStepChange(s.number);
+                      }
+                    }}
+                    className={`flex items-center gap-2 p-2 rounded-xl text-left transition-all ${
                       isCurrent
-                        ? "text-blue-400 font-bold"
+                        ? "bg-white/15 text-white font-bold border border-white/20"
                         : isDone
-                        ? "text-emerald-400"
-                        : "text-slate-500"
+                        ? "text-emerald-400 font-semibold hover:bg-white/5 cursor-pointer"
+                        : "text-slate-500 opacity-60 cursor-not-allowed"
                     }`}
                   >
-                    {isDone ? `✓ ${s.title}` : s.title}
-                  </span>
+                    <div
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0 ${
+                        isDone
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : isCurrent
+                          ? "bg-blue-500 text-white"
+                          : "bg-slate-800 text-slate-500"
+                      }`}
+                    >
+                      {isDone ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : s.number}
+                    </div>
+                    <span className="truncate hidden sm:inline">{s.title}</span>
+                  </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Wizard Step Content */}
+          {/* ── Step Body Content ────────────────────────────────────────── */}
           <div className="p-6 sm:p-8 lg:p-10 flex-1">
             {currentStep === 1 && (
-              <Step1SchoolInfo school={localSchool} setSchool={setLocalSchool} />
+              <Step1ImportStudents onContinue={() => handleStepChange(2)} />
             )}
             {currentStep === 2 && (
-              <Step2EducationType school={localSchool} setSchool={setLocalSchool} />
+              <Step2SetupTuition onContinue={() => handleStepChange(3)} />
             )}
             {currentStep === 3 && (
-              <Step3AcademicYear academicYear={localAcademicYear} setAcademicYear={setLocalAcademicYear} />
-            )}
-            {currentStep === 4 && (
-              <Step4Classes classes={localClasses} setClasses={setLocalClasses} school={localSchool} />
-            )}
-            {currentStep === 5 && (
-              <Step5TuitionPlans
-                classes={localClasses}
-                tuitionPlans={localTuitionPlans}
-                setTuitionPlans={setLocalTuitionPlans}
-                currency={localSchool.currency || "FCFA"}
-                onValidityChange={setIsMathValidInStep5}
-              />
-            )}
-            {currentStep === 6 && (
-              <Step6Users invitedUsers={invitedUsers} setInvitedUsers={setInvitedUsers} />
-            )}
-            {currentStep === 7 && (
-              <Step7Notifications school={localSchool} setSchool={setLocalSchool} />
-            )}
-            {currentStep === 8 && (
-              <Step8ImportData studentsCount={students.length} />
-            )}
-            {currentStep === 9 && (
-              <Step9FinishSummary
-                school={localSchool}
-                academicYear={localAcademicYear}
-                classes={localClasses}
-                tuitionPlans={localTuitionPlans}
-                invitedUsers={invitedUsers}
-                studentsCount={students.length}
+              <Step3ReadyPayments
+                onFinish={handleFinish}
+                onOpenPayment={handleOpenPayment}
               />
             )}
           </div>
 
-          {/* ── Wizard Footer Navigation ──────────────────────────────────── */}
-          <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
-            <div>
-              {currentStep > 1 ? (
-                <button
-                  type="button"
-                  onClick={handlePrev}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-colors cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Précédent</span>
-                </button>
-              ) : (
-                <div />
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {currentMeta.optional && currentStep < totalSteps && (
-                <button
-                  type="button"
-                  onClick={handleSkip}
-                  className="px-4 py-2.5 text-slate-500 hover:text-slate-800 text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  Ignorer pour le moment
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={!canContinue() || isSubmitting}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] disabled:opacity-50 text-white rounded-xl text-xs font-extrabold shadow-md shadow-blue-600/20 hover:shadow-lg transition-all cursor-pointer"
-              >
-                <span>
-                  {isSubmitting
-                    ? "Enregistrement..."
-                    : currentStep === totalSteps
-                    ? "Terminer la configuration"
-                    : "Continuer"}
-                </span>
-                {currentStep === totalSteps ? (
-                  <Check className="w-4 h-4" />
-                ) : (
-                  <ArrowRight className="w-4 h-4" />
+          {/* ── Step Footer Navigation ───────────────────────────────────── */}
+          {currentStep < 3 && (
+            <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between">
+              <div>
+                {currentStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleStepChange(currentStep - 1)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Étape précédente</span>
+                  </button>
                 )}
-              </button>
-            </div>
-          </div>
+              </div>
 
+              <div>
+                {currentStep === 1 && students.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleStepChange(2)}
+                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl text-xs font-extrabold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+                  >
+                    <span>Passer aux tarifs</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
       {/* ── Bottom Subtext ────────────────────────────────────────────────── */}
       <footer className="py-4 text-center text-xs text-slate-400">
-        SCOLY • Vos modifications sont automatiquement sauvegardées en arrière-plan.
+        SCOLY • Vos données sont automatiquement enregistrées en temps réel dans votre espace sécurisé.
       </footer>
 
+      {/* Payment Modal if launched from Step 3 */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onSuccess={(newPayment) => {
+          setLastPayment(newPayment);
+          setIsReceiptModalOpen(true);
+        }}
+      />
+
+      {/* Receipt Modal */}
+      <ReceiptModal
+        isOpen={isReceiptModalOpen}
+        payment={lastPayment}
+        onClose={() => {
+          setIsReceiptModalOpen(false);
+          setLastPayment(null);
+          // Redirect to dashboard after completing first payment test
+          handleFinish();
+        }}
+      />
     </div>
   );
 }
