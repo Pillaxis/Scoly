@@ -36,6 +36,8 @@ interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialSource?: ImportSourceType;
+  initialSheetData?: ParsedSheetData | null;
+  initialFileName?: string;
 }
 
 type ImportStep =
@@ -46,7 +48,13 @@ type ImportStep =
   | "BATCH_PROGRESS"
   | "SUMMARY";
 
-export function ImportModal({ isOpen, onClose, initialSource = "excel" }: ImportModalProps) {
+export function ImportModal({
+  isOpen,
+  onClose,
+  initialSource = "excel",
+  initialSheetData = null,
+  initialFileName = "",
+}: ImportModalProps) {
   const {
     school,
     academicYear,
@@ -83,18 +91,29 @@ export function ImportModal({ isOpen, onClose, initialSource = "excel" }: Import
 
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
 
-  // Reset state on open
+  // Reset state on open: Jump directly to PREVIEW_VALIDATION or INPUT_DATA
   useEffect(() => {
     if (isOpen) {
-      setCurrentStep("SELECT_SOURCE");
-      setSelectedSource(initialSource);
-      setSourceFileName("");
-      setActiveSheetData(null);
-      setColumnMappings([]);
-      setValidatedRows([]);
+      if (initialSheetData) {
+        setSourceFileName(initialFileName || "Fichier importé");
+        setActiveSheetData(initialSheetData);
+        const detectedMappings = detectColumnMapping(initialSheetData.headers);
+        setColumnMappings(detectedMappings);
+        const basicValidated = validateImportRows(initialSheetData.rows, detectedMappings, classes);
+        const withDuplicates = checkDuplicatesAgainstExistingStudents(basicValidated, students);
+        setValidatedRows(withDuplicates);
+        setCurrentStep("PREVIEW_VALIDATION");
+      } else {
+        setCurrentStep(initialSource ? "INPUT_DATA" : "SELECT_SOURCE");
+        setSelectedSource(initialSource || "excel");
+        setSourceFileName("");
+        setActiveSheetData(null);
+        setColumnMappings([]);
+        setValidatedRows([]);
+      }
       setImportSummary(null);
     }
-  }, [isOpen, initialSource]);
+  }, [isOpen, initialSource, initialSheetData, initialFileName, classes, students]);
 
   if (!isOpen) return null;
 

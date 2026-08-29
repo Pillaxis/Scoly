@@ -28,6 +28,8 @@ import { ImportSourceType } from "@/types/import";
 import { useScoly } from "@/lib/store";
 import { validateTuitionPlan, saveTuitionPlan } from "@/lib/services/tuition.service";
 
+import { parseExcelOrCsvFile, ParsedSheetData } from "@/lib/import/parsers/excel-csv-parser";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ÉTAPE 1 : IMPORTER LES ÉLÈVES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,16 +41,103 @@ export function Step1ImportStudents({
   const { students, classes } = useScoly();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importSource, setImportSource] = useState<ImportSourceType>("excel");
+  const [initialSheetData, setInitialSheetData] = useState<ParsedSheetData | null>(null);
+  const [initialFileName, setInitialFileName] = useState<string>("");
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState<string>("");
+
+  const excelInputRef = React.useRef<HTMLInputElement>(null);
+  const pdfInputRef = React.useRef<HTMLInputElement>(null);
 
   const openImport = (source: ImportSourceType) => {
+    setInitialSheetData(null);
+    setInitialFileName("");
     setImportSource(source);
     setIsImportModalOpen(true);
+  };
+
+  // Direct device file handler: Opens file immediately, parses it, and launches preview
+  const handleDeviceFile = async (file: File, isPdf = false) => {
+    setParseError("");
+    setIsParsing(true);
+    try {
+      if (isPdf || file.name.toLowerCase().endsWith(".pdf")) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("/api/import/pdf", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Impossible d'extraire les données du fichier PDF.");
+        }
+
+        const sheetData: ParsedSheetData = {
+          sheetName: "Document PDF",
+          headers: data.headers || ["Nom & Prénom", "Classe", "Genre", "Matricule", "Parent / Contact"],
+          rows: data.rows || [],
+          totalRows: data.totalRows || 0,
+        };
+
+        setInitialSheetData(sheetData);
+        setInitialFileName(file.name);
+        setImportSource("excel");
+        setIsImportModalOpen(true);
+      } else {
+        const result = await parseExcelOrCsvFile(file);
+        if (result.sheetNames.length === 0) {
+          throw new Error("Aucune donnée lisible détectée dans ce fichier.");
+        }
+        const sheet = result.sheets[result.selectedSheetName];
+        if (!sheet || sheet.rows.length === 0) {
+          throw new Error("La feuille sélectionnée ne contient aucune ligne.");
+        }
+
+        setInitialSheetData(sheet);
+        setInitialFileName(file.name);
+        setImportSource("excel");
+        setIsImportModalOpen(true);
+      }
+    } catch (err: any) {
+      setParseError(err.message || "Erreur lors de la lecture du fichier.");
+    } finally {
+      setIsParsing(false);
+    }
   };
 
   const hasStudents = students.length > 0;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Hidden file inputs for direct device selection */}
+      <input
+        ref={excelInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleDeviceFile(e.target.files[0], false);
+            e.target.value = "";
+          }
+        }}
+      />
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleDeviceFile(e.target.files[0], true);
+            e.target.value = "";
+          }
+        }}
+      />
+
       {/* Header */}
       <div className="space-y-1.5 text-center sm:text-left">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">
@@ -59,9 +148,16 @@ export function Step1ImportStudents({
           1. Importez vos élèves
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 max-w-xl">
-          Ajoutez la liste de vos élèves en quelques secondes. Les classes seront automatiquement détectées et créées.
+          Sélectionnez directement votre fichier depuis votre appareil. Vos élèves et vos classes seront automatiquement détectés.
         </p>
       </div>
+
+      {parseError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-2xl flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{parseError}</span>
+        </div>
+      )}
 
       {/* If students are already present */}
       {hasStudents ? (
@@ -83,7 +179,7 @@ export function Step1ImportStudents({
 
             <button
               type="button"
-              onClick={() => openImport("excel")}
+              onClick={() => excelInputRef.current?.click()}
               className="px-3.5 py-2 bg-white hover:bg-emerald-100/50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
@@ -123,12 +219,13 @@ export function Step1ImportStudents({
           </div>
         </div>
       ) : (
-        /* 4 Simple Import Cards */
+        /* 4 Simple Direct Import Cards */
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-          {/* Option 1: Excel / CSV */}
+          {/* Option 1: Excel / CSV (Direct Device File Selector) */}
           <button
             type="button"
-            onClick={() => openImport("excel")}
+            onClick={() => excelInputRef.current?.click()}
+            disabled={isParsing}
             className="p-5 bg-white hover:bg-blue-50/50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl text-left transition-all duration-200 group cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between min-h-[140px]"
           >
             <div className="flex items-start justify-between">
@@ -136,15 +233,15 @@ export function Step1ImportStudents({
                 <FileSpreadsheet className="w-6 h-6" />
               </div>
               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Recommandé
+                {isParsing ? "Lecture..." : "Depuis l'appareil"}
               </span>
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                Fichier Excel ou CSV
+                Choisir un fichier Excel ou CSV
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Glissez votre fichier .xlsx ou .csv avec les noms et classes.
+                Ouvre directement les fichiers de votre ordinateur ou téléphone (.xlsx, .csv).
               </p>
             </div>
           </button>
@@ -163,15 +260,16 @@ export function Step1ImportStudents({
                 Google Sheets
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Collez simplement le lien de partage de votre tableau Google.
+                Collez simplement le lien de partage de votre tableau Google en ligne.
               </p>
             </div>
           </button>
 
-          {/* Option 3: PDF / Document */}
+          {/* Option 3: Document PDF (Direct Device File Selector) */}
           <button
             type="button"
-            onClick={() => openImport("excel")}
+            onClick={() => pdfInputRef.current?.click()}
+            disabled={isParsing}
             className="p-5 bg-white hover:bg-blue-50/50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl text-left transition-all duration-200 group cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between min-h-[140px]"
           >
             <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -179,10 +277,10 @@ export function Step1ImportStudents({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                Document PDF ou Fichier
+                Choisir un Document PDF
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Listes scolaires officielles ou registres au format fichier.
+                Sélectionnez une liste d&apos;élèves ou un registre PDF de votre appareil.
               </p>
             </div>
           </button>
@@ -201,7 +299,7 @@ export function Step1ImportStudents({
                 Photo de registre (OCR)
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Prenez en photo une feuille de classe ou un registre papier.
+                Prenez en photo une feuille de classe ou un registre papier avec la caméra.
               </p>
             </div>
           </button>
@@ -212,7 +310,13 @@ export function Step1ImportStudents({
       <ImportModal
         isOpen={isImportModalOpen}
         initialSource={importSource}
-        onClose={() => setIsImportModalOpen(false)}
+        initialSheetData={initialSheetData}
+        initialFileName={initialFileName}
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setInitialSheetData(null);
+          setInitialFileName("");
+        }}
       />
     </div>
   );
