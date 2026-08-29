@@ -11,6 +11,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useScoly } from "@/lib/store";
+import { SchoolClass, Student, Payment } from "@/types/scoly";
 import {
   ImportSourceType,
   ColumnMappingRule,
@@ -60,12 +61,20 @@ export function ImportModal({
     academicYear,
     classes,
     students,
+    payments,
+    tuitionPlans,
+    paymentMethods,
+    reminders,
+    importBatches,
+    notifications,
+    currentUser,
+    addClass,
     addStudent,
     updateStudent,
     addPayment,
     logAudit,
     recordImportBatch,
-    syncLocalToSupabase,
+    refreshFromSupabase,
   } = useScoly();
 
   // Wizard state
@@ -174,14 +183,27 @@ export function ImportModal({
         onProgress: (progress) => {
           setBatchProgress(progress);
         },
+        onAddClass: addClass,
         onAddStudent: addStudent,
         onUpdateStudent: updateStudent,
         onAddPayment: addPayment,
         onLogAudit: logAudit,
       });
 
-      // Sauvegarde dans l'historique des lots
-      recordImportBatch({
+      // Prepare merged entity collections for atomic save
+      const mergedClassesMap = new Map<string, SchoolClass>();
+      classes.forEach((c) => mergedClassesMap.set(c.id, c));
+      summary.createdClasses.forEach((c) => mergedClassesMap.set(c.id, c));
+
+      const mergedStudentsMap = new Map<string, Student>();
+      students.forEach((s) => mergedStudentsMap.set(s.id, s));
+      summary.createdStudents.forEach((s) => mergedStudentsMap.set(s.id, s));
+
+      const mergedPaymentsMap = new Map<string, Payment>();
+      payments.forEach((p) => mergedPaymentsMap.set(p.id, p));
+      summary.createdPayments.forEach((p) => mergedPaymentsMap.set(p.id, p));
+
+      const batchRecord = {
         id: summary.batchId,
         school_id: school.id,
         academic_year_id: academicYear.id,
@@ -194,11 +216,40 @@ export function ImportModal({
         duplicates_count: summary.rowsSkipped,
         payload_summary: summary,
         created_at: summary.importedAt,
+      };
+
+      recordImportBatch(batchRecord);
+
+      // Save directly & atomically to Supabase PostgreSQL
+      const saveRes = await fetch("/api/sync/save-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          school,
+          academicYear,
+          classes: Array.from(mergedClassesMap.values()),
+          students: Array.from(mergedStudentsMap.values()),
+          payments: Array.from(mergedPaymentsMap.values()),
+          tuitionPlans,
+          paymentMethods,
+          reminders,
+          importBatches: [batchRecord, ...importBatches],
+          notifications,
+          user_id: currentUser?.id,
+          email: currentUser?.email || school?.email,
+        }),
       });
+
+      const saveData = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok || !saveData.success) {
+        throw new Error(saveData.error || "Échec de l'enregistrement dans la base de données Supabase.");
+      }
+
+      // Re-hydrate directly from Supabase PostgreSQL
+      await refreshFromSupabase();
 
       setImportSummary(summary);
       setCurrentStep("SUMMARY");
-      syncLocalToSupabase().catch((err) => console.debug("Cloud sync post-import notice:", err));
     } catch (err: any) {
       console.error("Batch import error:", err);
       setBatchErrorMessage(`Erreur lors de l'importation : ${err.message || "Erreur inconnue"}`);

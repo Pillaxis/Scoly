@@ -834,13 +834,13 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
             school: finalSchool,
             academicYear: finalYear,
             classes: finalClasses,
-            students: [],
-            payments: [],
+            students,
+            payments,
             tuitionPlans: finalPlans,
             paymentMethods,
-            reminders: [],
-            importBatches: [],
-            notifications: [],
+            reminders,
+            importBatches,
+            notifications,
             user_id: currentUser?.id,
             email: currentUser?.email || finalSchool?.email,
           }),
@@ -848,12 +848,13 @@ export function ScolyProvider({ children }: { children: React.ReactNode }) {
 
         if (res.ok) {
           setSyncStatus("synced");
+          await fetchAllFromSupabase(finalSchool.id, currentUser?.id, currentUser?.email || finalSchool?.email);
         }
       } catch (err) {
         console.warn("[Onboarding] Sync error on completion:", err);
       }
     },
-    [school, academicYear, classes, tuitionPlans, paymentMethods, currentUser]
+    [school, academicYear, classes, students, payments, tuitionPlans, paymentMethods, reminders, importBatches, notifications, currentUser, fetchAllFromSupabase]
   );
 
   const logoutUser = useCallback(async () => {

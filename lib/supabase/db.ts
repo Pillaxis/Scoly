@@ -348,54 +348,76 @@ export async function insertStudentDb(
   const client = sb();
   if (!client) return false;
 
-  try {
-    // 1. Insert Parent
-    let parentId = student.parent?.id;
-    if (!parentId || parentId.startsWith("par-")) {
-      const { data: parentData, error: parentErr } = await client
-        .from("parents")
-        .insert({
-          school_id: schoolId,
-          full_name: student.parent.full_name,
-          relationship: student.parent.relationship || "Parent",
-          phone_primary: student.parent.phone_primary,
-          phone_whatsapp: student.parent.phone_whatsapp,
-          email: student.parent.email,
-          profession: student.parent.profession,
-          address: student.parent.address,
-        })
-        .select()
-        .single();
+  const isUUID = (str?: string) =>
+    str ? /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str) : false;
 
-      if (!parentErr && parentData) {
-        parentId = parentData.id;
-      }
+  try {
+    // 1. Insert / Update Parent
+    let parentId = isUUID(student.parent?.id) ? student.parent.id : crypto.randomUUID();
+    let parentName = (student.parent?.full_name || "").trim();
+    let parentPhone = (student.parent?.phone_primary || "").trim();
+
+    const isPurePhone = (str: string) => {
+      const digits = str.replace(/[^0-9+]/g, "");
+      return digits.length >= 7 && (digits.length / (str.replace(/\s/g, "").length || 1)) >= 0.7;
+    };
+
+    if (parentName && isPurePhone(parentName)) {
+      if (!parentPhone || parentPhone === "—") parentPhone = parentName;
+      parentName = `Parent de ${student.last_name || "l'élève"}`;
     }
 
+    if (!parentName) {
+      parentName = `Parent de ${student.last_name || "l'élève"}`;
+    }
+
+    if (!parentPhone || parentPhone === "—") {
+      parentPhone = "+228 90 00 00 00";
+    }
+
+    const { data: parentData } = await client
+      .from("parents")
+      .upsert({
+        id: parentId,
+        school_id: schoolId,
+        full_name: parentName,
+        relationship: student.parent?.relationship || "Parent",
+        phone_primary: parentPhone,
+        phone_whatsapp: student.parent?.phone_whatsapp || null,
+        email: student.parent?.email || null,
+        profession: student.parent?.profession || null,
+        address: student.parent?.address || null,
+      })
+      .select("id")
+      .single();
+
+    if (parentData?.id) parentId = parentData.id;
+
     // 2. Insert Student
+    const studentId = isUUID(student.id) ? student.id : crypto.randomUUID();
+    const classId = isUUID(student.class_id) ? student.class_id : null;
+
     const studentPayload: any = {
+      id: studentId,
       school_id: schoolId,
       academic_year_id: yearId,
-      class_id: student.class_id || null,
-      matricule: student.matricule,
-      first_name: student.first_name,
-      last_name: student.last_name,
-      gender: student.gender,
+      class_id: classId,
+      matricule: student.matricule || `MAT-${studentId.slice(0, 6)}`,
+      first_name: student.first_name.trim(),
+      last_name: student.last_name.trim(),
+      gender: student.gender || "M",
       birth_date: student.birth_date || null,
       is_active: student.is_active !== false,
       discount_amount: student.discount_amount || 0,
-      discount_reason: student.discount_reason,
+      discount_reason: student.discount_reason || null,
       custom_tuition: student.custom_tuition || null,
+      updated_at: new Date().toISOString(),
     };
-
-    if (student.id && !student.id.startsWith("stu-")) {
-      studentPayload.id = student.id;
-    }
 
     const { data: studentData, error: studentErr } = await client
       .from("students")
       .upsert(studentPayload)
-      .select()
+      .select("id")
       .single();
 
     if (studentErr || !studentData) return false;
@@ -406,7 +428,7 @@ export async function insertStudentDb(
         student_id: studentData.id,
         parent_id: parentId,
         is_primary_contact: true,
-      });
+      }, { onConflict: "student_id,parent_id" });
     }
 
     return true;

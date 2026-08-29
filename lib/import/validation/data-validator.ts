@@ -101,16 +101,67 @@ export function validateImportRows(
     const discountAmount = rawDiscount ? parseNumericAmount(rawDiscount) : 0;
     const discountReason = getValue("discount_reason") || undefined;
 
-    // 7. Parent
-    const parentName = getValue("parent_name") || (lastName ? `Parent de ${lastName}` : "Parent");
-    const rawPhone = getValue("parent_phone");
-    let cleanPhone = rawPhone.replace(/[^0-9+]/g, "");
-    if (rawPhone && cleanPhone.length < 8) {
-      warnings.push(`Numéro de téléphone '${rawPhone}' semble incomplet (moins de 8 chiffres).`);
+    // 7. Parent & Téléphone (Extraction Intelligente et Séparation Automatique)
+    let rawParentName = (getValue("parent_name") || "").trim();
+    let rawPhone = (getValue("parent_phone") || "").trim();
+    const rawWa = (getValue("parent_whatsapp") || "").trim();
+
+    // Helper: détecter si une chaîne est principalement un numéro de téléphone
+    const isPhoneNumberLike = (str: string): boolean => {
+      if (!str) return false;
+      const clean = str.replace(/[^0-9+]/g, "");
+      const nonSpaceLen = str.replace(/\s/g, "").length;
+      return clean.length >= 7 && clean.length / (nonSpaceLen || 1) >= 0.65;
+    };
+
+    // Helper: extraire un numéro de téléphone imbriqué dans un texte (ex: "Marie KOFFI - 90123456", "KOFFI (90123456)")
+    const extractEmbeddedPhone = (str: string): { name: string; phone?: string } => {
+      if (!str) return { name: "" };
+      const phoneRegex = /(?:\+?\d{1,4}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?){2,4}\d{2,4}/;
+      const match = str.match(phoneRegex);
+      if (match && match[0]) {
+        const potentialPhone = match[0].replace(/^[(-]+|[)-]+$/g, "").trim();
+        const digitsOnly = potentialPhone.replace(/[^0-9]/g, "");
+        if (digitsOnly.length >= 8) {
+          const remainingName = str
+            .replace(match[0], "")
+            .replace(/[-–—/()]/g, " ")
+            .trim()
+            .replace(/\s+/g, " ");
+          return {
+            name: remainingName,
+            phone: potentialPhone,
+          };
+        }
+      }
+      return { name: str };
+    };
+
+    // Cas 1 : La colonne Nom contient en réalité uniquement un numéro de téléphone
+    if (rawParentName && isPhoneNumberLike(rawParentName)) {
+      if (!rawPhone) {
+        rawPhone = rawParentName;
+      }
+      rawParentName = "";
+    } else if (rawParentName) {
+      // Cas 2 : La colonne Nom contient "Nom - Téléphone" combinés
+      const extracted = extractEmbeddedPhone(rawParentName);
+      if (extracted.phone) {
+        if (!rawPhone) rawPhone = extracted.phone;
+        rawParentName = extracted.name;
+      }
     }
 
-    const rawWa = getValue("parent_whatsapp");
-    const cleanWa = rawWa ? rawWa.replace(/[^0-9+]/g, "") : cleanPhone;
+    // Cas 3 : La colonne Téléphone contient un nom et pas de chiffres
+    if (rawPhone && !isPhoneNumberLike(rawPhone) && !rawParentName) {
+      rawParentName = rawPhone;
+      rawPhone = "";
+    }
+
+    const parentName = rawParentName || (lastName ? `Parent de ${lastName}` : "Parent");
+    const cleanDigits = rawPhone.replace(/[^0-9+]/g, "").replace(/^[(-]+|[)-]+$/g, "");
+    const cleanPhone = cleanDigits && cleanDigits.length >= 6 ? rawPhone.replace(/^[(-]+|[)-]+$/g, "").trim() : "—";
+    const cleanWa = rawWa ? rawWa.replace(/[^0-9+]/g, "").trim() : cleanPhone !== "—" ? cleanPhone : undefined;
 
     let relVal = getValue("parent_relationship").toLowerCase();
     let relationship: "Père" | "Mère" | "Tuteur" | "Autre" = "Père";

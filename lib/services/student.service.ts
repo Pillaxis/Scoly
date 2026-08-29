@@ -88,7 +88,7 @@ export async function createStudent(input: CreateStudentInput): Promise<StudentS
       : generateStudentMatricule("2025-2026", className, existingCount);
 
   const parent: Parent = {
-    id: `par-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: crypto.randomUUID(),
     school_id: schoolId,
     full_name: parentName.trim(),
     relationship: parentRelationship,
@@ -99,7 +99,7 @@ export async function createStudent(input: CreateStudentInput): Promise<StudentS
   };
 
   const student: Student = {
-    id: `stu-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: crypto.randomUUID(),
     school_id: schoolId,
     academic_year_id: academicYearId,
     class_id: classId,

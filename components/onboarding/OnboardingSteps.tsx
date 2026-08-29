@@ -19,7 +19,7 @@ import {
   X,
   FileUp,
 } from "lucide-react";
-import { SchoolClass, TuitionPlan, TuitionInstallment } from "@/types/scoly";
+import { SchoolClass, Student, Payment, TuitionPlan, TuitionInstallment } from "@/types/scoly";
 import { ImportSourceType, ValidatedImportRow } from "@/types/import";
 import { useScoly } from "@/lib/store";
 import { validateTuitionPlan, saveTuitionPlan } from "@/lib/services/tuition.service";
@@ -42,14 +42,22 @@ export function Step1ImportStudents({
   const {
     students,
     classes,
+    payments,
     school,
     academicYear,
+    tuitionPlans,
+    paymentMethods,
+    reminders,
+    importBatches,
+    notifications,
+    currentUser,
+    addClass,
     addStudent,
     updateStudent,
     addPayment,
     logAudit,
     recordImportBatch,
-    syncLocalToSupabase,
+    refreshFromSupabase,
   } = useScoly();
 
   const [isParsing, setIsParsing] = useState(false);
@@ -187,11 +195,11 @@ export function Step1ImportStudents({
     }
   };
 
-  // Confirm import and batch execute
+  // Confirm import and batch execute with Guaranteed Atomic Supabase Persistence
   const handleConfirmImport = async () => {
     if (!analyzedFile || analyzedFile.rows.length === 0) return;
     setIsImporting(true);
-    setImportProgress("Importation en cours...");
+    setImportProgress("Importation et enregistrement dans la base...");
 
     try {
       const summary = await executeBatchImport({
@@ -207,14 +215,27 @@ export function Step1ImportStudents({
         onProgress: (p) => {
           setImportProgress(`Importation : ${p.processedRows}/${p.totalRows} élèves...`);
         },
+        onAddClass: addClass,
         onAddStudent: addStudent,
         onUpdateStudent: updateStudent,
         onAddPayment: addPayment,
         onLogAudit: logAudit,
       });
 
-      // Record batch record
-      recordImportBatch({
+      // Prepare merged entity collections for single atomic save
+      const mergedClassesMap = new Map<string, SchoolClass>();
+      classes.forEach((c) => mergedClassesMap.set(c.id, c));
+      summary.createdClasses.forEach((c) => mergedClassesMap.set(c.id, c));
+
+      const mergedStudentsMap = new Map<string, Student>();
+      students.forEach((s) => mergedStudentsMap.set(s.id, s));
+      summary.createdStudents.forEach((s) => mergedStudentsMap.set(s.id, s));
+
+      const mergedPaymentsMap = new Map<string, Payment>();
+      payments.forEach((p) => mergedPaymentsMap.set(p.id, p));
+      summary.createdPayments.forEach((p) => mergedPaymentsMap.set(p.id, p));
+
+      const batchRecord = {
         id: summary.batchId,
         school_id: school.id,
         academic_year_id: academicYear.id,
@@ -227,9 +248,38 @@ export function Step1ImportStudents({
         duplicates_count: summary.rowsSkipped,
         payload_summary: summary,
         created_at: summary.importedAt,
+      };
+
+      recordImportBatch(batchRecord);
+
+      // 1. Direct Atomic Persistence to Supabase PostgreSQL
+      const saveRes = await fetch("/api/sync/save-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          school,
+          academicYear,
+          classes: Array.from(mergedClassesMap.values()),
+          students: Array.from(mergedStudentsMap.values()),
+          payments: Array.from(mergedPaymentsMap.values()),
+          tuitionPlans,
+          paymentMethods,
+          reminders,
+          importBatches: [batchRecord, ...importBatches],
+          notifications,
+          user_id: currentUser?.id,
+          email: currentUser?.email || school?.email,
+        }),
       });
 
-      syncLocalToSupabase().catch(() => {});
+      const saveData = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok || !saveData.success) {
+        throw new Error(saveData.error || "Échec de l'enregistrement dans la base de données Supabase.");
+      }
+
+      // 2. Re-hydrate directly from Supabase PostgreSQL (Single source of truth)
+      await refreshFromSupabase();
+
       setAnalyzedFile(null);
       onContinue();
     } catch (err: any) {

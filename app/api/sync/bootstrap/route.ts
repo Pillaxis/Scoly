@@ -260,28 +260,8 @@ export async function POST(req: NextRequest) {
             })),
         }));
 
-        // Map Classes (Prune obsolete legacy seed classes if present)
-        let rawClasses = classesRes.status === "fulfilled" && classesRes.value.data ? classesRes.value.data : [];
-        
-        const SEED_NAMES = new Set([
-          "CI", "CP", "CE1", "CE2", "CM1", "CM2", 
-          "6ème A", "5ème A", "4ème A", "3ème A", 
-          "2nde CD", "1ère D", "Terminale D"
-        ]);
-
-        const isLegacySeedBatch = 
-          rawClasses.length === 13 && 
-          rawClasses.every((c: any) => SEED_NAMES.has(c.name)) &&
-          students.length === 0;
-
-        if (isLegacySeedBatch) {
-          try {
-            const seedIds = rawClasses.map((c: any) => c.id);
-            await supabase.from("tuition_plans").delete().in("class_id", seedIds);
-            await supabase.from("classes").delete().in("id", seedIds);
-          } catch {}
-          rawClasses = [];
-        }
+        // Map Classes
+        const rawClasses = classesRes.status === "fulfilled" && classesRes.value.data ? classesRes.value.data : [];
 
         const classes = rawClasses.map((c: any) => ({
           id: c.id,

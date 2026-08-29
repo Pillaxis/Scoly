@@ -13,6 +13,7 @@ export interface BatchProcessingOptions {
   batchSize?: number;
   onProgress?: (progress: BatchProgress) => void;
   // Fonctions de mutation du store
+  onAddClass?: (classData: any) => ClassRoom;
   onAddStudent: (studentData: any) => Student;
   onUpdateStudent: (id: string, updates: Partial<Student>) => void;
   onAddPayment: (paymentData: any) => Payment;
@@ -22,7 +23,11 @@ export interface BatchProcessingOptions {
 /**
  * Traite les lignes d'import par lots asynchrones sans bloquer l'UI
  */
-export async function executeBatchImport(options: BatchProcessingOptions): Promise<ImportSummary> {
+export async function executeBatchImport(options: BatchProcessingOptions): Promise<ImportSummary & {
+  createdStudents: Student[];
+  createdPayments: Payment[];
+  createdClasses: ClassRoom[];
+}> {
   const {
     rows,
     sourceType,
@@ -34,6 +39,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
     availableClasses,
     batchSize = 25,
     onProgress,
+    onAddClass,
     onAddStudent,
     onUpdateStudent,
     onAddPayment,
@@ -43,6 +49,11 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
   const totalRows = rows.length;
   const totalBatches = Math.ceil(totalRows / batchSize) || 1;
   const batchId = `import-${Date.now()}`;
+
+  const createdStudents: Student[] = [];
+  const createdPayments: Payment[] = [];
+  const createdClasses: ClassRoom[] = [];
+  const knownClasses: ClassRoom[] = [...availableClasses];
 
   let studentsImported = 0;
   let studentsUpdated = 0;
@@ -128,13 +139,30 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
       }
 
       // Création d'un nouvel élève
-      // Trouver ou associer la classe
+      // Trouver ou créer la classe
+      const rawClassName = row.parsedStudent.class_name?.trim() || "Classe standard";
       let classId = row.parsedStudent.class_id;
       if (!classId) {
-        const found = availableClasses.find(
-          (c) => c.name.toLowerCase().trim() === row.parsedStudent.class_name.toLowerCase().trim()
+        const found = knownClasses.find(
+          (c) => c.name.toLowerCase().trim() === rawClassName.toLowerCase()
         );
-        classId = found ? found.id : availableClasses[0]?.id || "cls-default";
+        if (found) {
+          classId = found.id;
+        } else if (onAddClass) {
+          try {
+            const newCls = onAddClass({
+              name: rawClassName,
+              level: "Secondaire",
+            });
+            knownClasses.push(newCls);
+            createdClasses.push(newCls);
+            classId = newCls.id;
+          } catch {
+            classId = knownClasses[0]?.id || "cls-default";
+          }
+        } else {
+          classId = knownClasses[0]?.id || "cls-default";
+        }
       }
 
       // S'assurer que le tarif couvre le paiement importé si renseigné
@@ -150,7 +178,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
         gender: row.parsedStudent.gender,
         birth_date: row.parsedStudent.birth_date,
         class_id: classId,
-        class_name: row.parsedStudent.class_name,
+        class_name: rawClassName,
         matricule: row.parsedStudent.matricule,
         custom_tuition: effectiveTuition,
         discount_amount: row.parsedStudent.discount_amount,
@@ -163,6 +191,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
         parent_address: row.parsedParent?.address,
       });
 
+      createdStudents.push(createdStudent);
       studentsImported++;
       if (row.parsedParent?.phone_primary && row.parsedParent.phone_primary !== "—") {
         parentsAssociated++;
@@ -171,7 +200,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
       // Enregistrement du paiement associé
       if (row.parsedPayment && row.parsedPayment.amount > 0) {
         try {
-          onAddPayment({
+          const newPay = onAddPayment({
             student_id: createdStudent.id,
             amount: row.parsedPayment.amount,
             payment_method: row.parsedPayment.payment_method || "cash",
@@ -180,6 +209,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
             notes: row.parsedPayment.notes || `Paiement importé (${sourceType})`,
             recorded_by_name: "Import Intelligent",
           });
+          createdPayments.push(newPay);
           paymentsImported++;
         } catch (payErr) {
           console.warn(`[Batch Import] Payment skipped for new student ${createdStudent.id}:`, payErr);
@@ -201,7 +231,7 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
     });
   }
 
-  const summary: ImportSummary = {
+  const summary = {
     batchId,
     sourceType,
     fileName,
@@ -215,6 +245,9 @@ export async function executeBatchImport(options: BatchProcessingOptions): Promi
     importedAt: new Date().toISOString(),
     academicYearId,
     academicYearName,
+    createdStudents,
+    createdPayments,
+    createdClasses,
   };
 
   // Enregistrement dans le journal d'audit

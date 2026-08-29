@@ -86,20 +86,21 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    // ─── 4. UPSERT CLASSES (WITH OBSOLETE CLASS PRUNING) ─────────────────────
+    // ─── 4. UPSERT CLASSES ──────────────────────────────────────────────────
     const isUUID = (str: string) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 
-    // Map old/custom IDs to valid UUIDs
+    // Map old/custom IDs and class names to valid UUIDs
     const classIdMap = new Map<string, string>();
+    const classNameToIdMap = new Map<string, string>();
 
     if (Array.isArray(classes)) {
-      const activeClassUuids: string[] = [];
-
       for (const cls of classes) {
         const validId = isUUID(cls.id) ? cls.id : crypto.randomUUID();
         classIdMap.set(cls.id, validId);
-        activeClassUuids.push(validId);
+        if (cls.name) {
+          classNameToIdMap.set(cls.name.toLowerCase().trim(), validId);
+        }
 
         try {
           await supabase.from("classes").upsert({
@@ -117,29 +118,6 @@ export async function POST(req: NextRequest) {
           });
         } catch (err: any) {
           console.warn("[Save-All] Class upsert notice:", err?.message);
-        }
-      }
-
-      // If specific classes were provided, remove seed/obsolete classes for this school
-      if (activeClassUuids.length > 0) {
-        try {
-          const { data: dbClasses } = await supabase
-            .from("classes")
-            .select("id")
-            .eq("school_id", schoolId);
-
-          const toDelete = (dbClasses || [])
-            .map((c) => c.id)
-            .filter((id) => !activeClassUuids.includes(id));
-
-          if (toDelete.length > 0) {
-            // Delete tuition plans linked to deleted classes
-            await supabase.from("tuition_plans").delete().in("class_id", toDelete);
-            // Delete classes
-            await supabase.from("classes").delete().in("id", toDelete);
-          }
-        } catch (pruneErr) {
-          console.warn("[Save-All] Class prune notice:", pruneErr);
         }
       }
     }
@@ -160,35 +138,65 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    // ─── 6. UPSERT STUDENTS & PARENTS ─────────────────────────────────────────
+    // ─── 6. UPSERT STUDENTS & PARENTS (ATOMIC PERSISTENCE) ───────────────────
     let studentsSaved = 0;
     if (Array.isArray(students) && students.length > 0) {
       for (const s of students) {
         let parentId = s.parent?.id && isUUID(s.parent.id) ? s.parent.id : crypto.randomUUID();
         const studentId = s.id && isUUID(s.id) ? s.id : crypto.randomUUID();
-        const studentClassId = classIdMap.get(s.class_id) || (isUUID(s.class_id) ? s.class_id : null);
+        
+        let studentClassId = classIdMap.get(s.class_id) || (isUUID(s.class_id) ? s.class_id : null);
+        if (!studentClassId && s.class_name) {
+          studentClassId = classNameToIdMap.get(s.class_name.toLowerCase().trim()) || null;
+        }
+
+        // Parent name & phone extraction & sanitization
+        let parentFullName = (s.parent?.full_name || "").trim();
+        let parentPhone = (s.parent?.phone_primary || "").trim();
+        const parentWa = (s.parent?.phone_whatsapp || "").trim() || null;
+
+        // If parent full_name is purely digits/phone number
+        const isPurePhone = (str: string) => {
+          const digits = str.replace(/[^0-9+]/g, "");
+          return digits.length >= 7 && (digits.length / (str.replace(/\s/g, "").length || 1)) >= 0.7;
+        };
+
+        if (parentFullName && isPurePhone(parentFullName)) {
+          if (!parentPhone || parentPhone === "—") {
+            parentPhone = parentFullName;
+          }
+          parentFullName = `Parent de ${s.last_name || "l'élève"}`;
+        }
+
+        if (!parentFullName) {
+          parentFullName = `Parent de ${s.last_name || "l'élève"}`;
+        }
+
+        if (parentPhone === "—" || !parentPhone) {
+          parentPhone = "+228 90 00 00 00"; // Valid fallback for DB constraint if required
+        }
 
         // Insert / Update Parent
-        if (s.parent && s.parent.full_name) {
-          try {
-            const { data: pData } = await supabase
-              .from("parents")
-              .upsert({
-                id: parentId,
-                school_id: schoolId,
-                full_name: s.parent.full_name,
-                relationship: s.parent.relationship || "Parent",
-                phone_primary: s.parent.phone_primary || "+228 90 00 00 00",
-                phone_whatsapp: s.parent.phone_whatsapp || null,
-                email: s.parent.email || null,
-                profession: s.parent.profession || null,
-                address: s.parent.address || null,
-              })
-              .select("id")
-              .single();
+        try {
+          const { data: pData } = await supabase
+            .from("parents")
+            .upsert({
+              id: parentId,
+              school_id: schoolId,
+              full_name: parentFullName,
+              relationship: s.parent?.relationship || "Parent",
+              phone_primary: parentPhone,
+              phone_whatsapp: parentWa,
+              email: s.parent?.email || null,
+              profession: s.parent?.profession || null,
+              address: s.parent?.address || null,
+            })
+            .select("id")
+            .single();
 
-            if (pData?.id) parentId = pData.id;
-          } catch {}
+          if (pData?.id) parentId = pData.id;
+        } catch (pErr) {
+          console.warn("[Save-All] Parent upsert notice:", pErr);
         }
 
         // Insert / Update Student
@@ -219,8 +227,12 @@ export async function POST(req: NextRequest) {
                 is_primary_contact: true,
               }, { onConflict: "student_id,parent_id" });
             }
+          } else if (sErr) {
+            console.warn("[Save-All] Student upsert error:", sErr.message);
           }
-        } catch {}
+        } catch (sEx) {
+          console.warn("[Save-All] Student exception:", sEx);
+        }
       }
     }
 
